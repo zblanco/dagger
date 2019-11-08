@@ -5,6 +5,8 @@ defmodule Dagger.TestRunner do
   @behaviour Dagger.Runner
   alias Dagger.Step
 
+  def squareaplier(num), do: {:ok, num * num}
+
   @impl true
   def run(%Step{} = step) do
     Step.run(step)

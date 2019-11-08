@@ -177,7 +177,7 @@ defmodule Dagger.Step do
         |> set_result(result)
         |> set_parent_as_result_for_children()
         |> assign_run_id_for_children()
-        |> enqueue_next_steps()
+        |> dispatch_to_runners() # this is runner specific
 
       {:ok, updated_step}
     else
@@ -203,10 +203,11 @@ defmodule Dagger.Step do
     %__MODULE__{parent_step | steps: child_steps}
   end
 
-  def enqueue_next_steps(%__MODULE__{steps: nil} = step),
+  def dispatch_to_runners(%__MODULE__{steps: nil} = step),
     do: evaluate_runnability(step)
-  def enqueue_next_steps(%__MODULE__{steps: steps, runner: runner} = step) do
-    Enum.each(steps, fn {_name, step} -> runner.enqueue(step) end) # consider how to handle errors
+  def dispatch_to_runners(%__MODULE__{steps: steps, runner: runner} = step) do
+    Enum.each(steps, fn {_name, step} -> runner.run(step) end)
     step
   end
+
 end
