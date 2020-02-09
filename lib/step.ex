@@ -57,12 +57,6 @@ defmodule Dagger.Step do
       },
     }
   ```
-
-  TODO:
-
-  - [x] Implement `run_id` to keep track of active steps this will let us handle retries and prune deactivated steps from session terminations
-  - [] step retry counts?
-  * Maybe context is an anti-pattern?
   """
   defstruct name: nil,
             run_id: nil,
@@ -85,11 +79,9 @@ defmodule Dagger.Step do
     runnable?: boolean(),
     context: map(),
   }
-
   def new(params) do
     struct!(__MODULE__, params)
   end
-
   def can_run?(%__MODULE__{runnable?: true}), do: :ok
   def can_run?(%__MODULE__{}), do: :error
 
@@ -168,6 +160,7 @@ defmodule Dagger.Step do
   Assuming a runnable step, `run/1` executes the function contained in `work`,
     sets the `result` with the return and enqueues dependent steps with the result as the input for the children.
   """
+
   def run(%__MODULE__{runnable?: false}), do: {:error, "step not runnable"}
   def run(%__MODULE__{work: work, input: input} = step) # consider mfa
   when is_function(work) do
@@ -184,6 +177,9 @@ defmodule Dagger.Step do
       {:error, _} = error -> error
       error -> error
     end
+  end
+  def run(cmd) do
+    run(Dagger.Runnable.to_runnable(cmd))
   end
 
   def set_parent_as_result_for_children(%__MODULE__{steps: nil} = parent_step),  do: parent_step

@@ -22,11 +22,18 @@ defmodule Dagger do
 
   Dagger lets you build a pipeline of steps that can be injected with inputs and delivered to a runner.
 
-  The top level API of Dagger is responsible for helping you build those pipelines of Steps, 
+  The top level API of Dagger is responsible for helping you build those pipelines of Steps,
     assert validity of a step, and dispatch to the runner.
 
   ```elixir
+  Do we want
 
+  some_runner = SomeRunner.new(config)
+  some_command = SomeCommand.new(params)
+
+  some_runner.run(some_command)
+
+  or Dagger.run(some_command)
   ```
   """
 end
