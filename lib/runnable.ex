@@ -4,7 +4,7 @@ defprotocol Dagger.Runnable do
 
   This dispatches the `to_runnable/1` transformation function required by the runnable protocol.
 
-  `to_runnable/1` implementations are required to return `{:ok, %Step{}} | {:error, any}`.
+  `to_runnable/1` implementations are required to return `{:ok, {input, %Step{}} | {:error, any}`.
 
   It isn't necessary to use runnable to use Dagger.
   You can just use functions like `Step.new` and `Step.add_dependent_job` in your business logic.

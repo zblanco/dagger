@@ -1,6 +1,6 @@
 defmodule WorkflowText do
   use ExUnit.Case
-  alias Dagger.{Workflow, Rule, Step, Pipeline}
+  alias Dagger.{Workflow, Rule, Step}
   alias Dagger.TestRunner
 
   describe "workflows" do
@@ -30,44 +30,46 @@ defmodule WorkflowText do
     end
 
     test "a workflow compiles rules into a graph of dependent steps" do
-
+      assert false
     end
   end
 
   describe "rule constructor constraints" do
     test "a rule needs required params to be created" do
-
+      assert false
     end
 
     test "conditions must be functions" do
-
+      assert false
     end
 
     test "a rule's condition must return a boolean" do
-
+      assert false
     end
 
     test "a rule's reaction " do
-
+      assert false
     end
 
   end
 
+  describe "workflow composition" do
+    test "a workflow can be connected to another workflow as a dependent step" do
+      assert false
+    end
+  end
+
   describe "use cases" do
     test "approval procedure" do
-
+      assert false
     end
 
     test "coffee shop fsm" do
-
+      assert false
     end
 
     test "text processing pipeline" do
-
-    end
-
-    test "" do
-
+      assert false
     end
   end
 

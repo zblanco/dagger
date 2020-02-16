@@ -4,13 +4,17 @@ defmodule Dagger.Workflow.Step do
 
   A step always has one parent. A step can have many children.
 
-  A step's `work` field is a function that accepts facts and returns a fact.
+  Steps are connected in a workflow through dataflow dependencies meaning the parent's output is fed the dependent step.
+
+  A step's `work` field is a function that always accepts facts and returns a fact.
 
   Any children are fed the parent's fact.
 
   A `:condition` type step always returns a boolean fact.
 
   A `:reaction` type step always returns either a fact, or a data structure that conforms to the Runnable protocol.
+
+  An `:accumulation` type step always returns a fact of a `state_produced` type.
 
   The Runnable protocol allows irreversable side-effects to be protected with only-once execution by breaking up
     the execution into two parts.
@@ -42,7 +46,10 @@ defmodule Dagger.Workflow.Step do
   """
   alias Dagger.Workflow.{Rule, Step, Fact}
 
-  @type type() :: :reaction | :condition
+  @type type() ::
+    :reaction
+    | :condition
+    | :accumulation
 
   defstruct name: nil,
             work: nil,
@@ -72,7 +79,7 @@ defmodule Dagger.Workflow.Step do
     }
   end
 
-  # todo: inject hasher as dependency
+  # todo: inject hashing method as dependency
   defp work_hash({m, f}),
     do: :erlang.phash2(:erlang.term_to_binary(Function.capture(m, f, 1)))
   defp work_hash(work) when is_function(work, 1),

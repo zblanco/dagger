@@ -10,9 +10,9 @@ defmodule Dagger.Workflow do
   You can think of Dagger Workflows as a recipe of rules that when fed a stream of facts may react.
 
   Instead of the dependencies modeled on the level of Elixir code compiled to AST (Abstract Syntax Tree)
-    we're using a graph data structure and passing lambda functions around. The trade-off is that we can
-    support modification of these constraints at runtime without going through a compilation phase however
-    we now have to enforce invariants that the compiler normally would.
+  we're using a graph data structure and passing lambda functions around. The trade-off is that we can
+  support modification of these constraints at runtime without going through a compilation phase however
+  we now have to enforce invariants that the compiler normally would.
 
   A big advantage to specifying the flow of data through dependencies in a graph is we have a model of possible
   paralellism between steps. This is essentially a runtime behaviour contract that we can use to generate
@@ -288,6 +288,8 @@ defmodule Dagger.Workflow do
     hash: binary()
   }
 
+  @type runnable() :: {fun(), term()} # | %Runnable{}
+
   @enforce_keys [:name]
 
   defstruct name: nil,
@@ -307,14 +309,9 @@ defmodule Dagger.Workflow do
   defp root(), do: :root
 
   @doc """
-  Returns an Elixir Stream Resource for a workflow used to map over facts.
-  """
-  def fact_stream() do
+  Returns signed runnables that when executed may result in side effects.
 
-  end
-
-  @doc """
-  Returns signed runnables (i.e. Commands or Actions) that when executed may result in side effects.
+  A runnable holds everything necessary for a "reaction" or potential side effect to occur without actually executing the operation.
 
   Reactions in a workflow are two-phase. Exposing intentions of some action with the `value` fact paired with the work function to apply it to.
   """
@@ -324,7 +321,7 @@ defmodule Dagger.Workflow do
 
   @doc """
   Adds a rule to the workflow. Rules are converted into individual steps where the condition step
-  is attached to the parent. The parent is almost always the root node unless it's a duplicate
+  is attached to the root. The parent is almost always the root node unless it's a duplicate
   in which case the reaction is attached to the existing condition step.
 
   In some cases the condition is in multiple parts and some of the conditional clauses already exist as steps
@@ -337,56 +334,59 @@ defmodule Dagger.Workflow do
 
     %__MODULE__{workflow | flow:
       flow
-      |> Graph.add_vertex(condition_step, [hash(condition_step), condition_step.name])
-      |> Graph.add_vertex(reaction_step, [hash(reaction_step), reaction_step.name])
-      |> Graph.add_edge(root(), condition_step)
-      |> Graph.add_edge(condition_step, reaction_step)
+      |> Graph.add_vertex(condition_step, [condition_step.hash, condition_step.name])
+      |> Graph.add_vertex(reaction_step, [reaction_step.hash, reaction_step.name])
+      |> Graph.add_edge(root(), condition_step, label: {:root, condition_step.hash})
+      |> Graph.add_edge(condition_step, reaction_step, label: {condition_step.hash, reaction_step.hash})
     }
   end
 
   @doc """
-  Adds a dependent step to some other step a workflow by name.
+  Adds a dependent step to some other step in a workflow by name.
 
-  The dependent step is fed signed facts produced by the parent step.
+  The dependent step is fed signed facts produced by the parent step during a reaction.
   """
-  def add_step(%__MODULE__{flow: flow} = workflow, step_name, %Step{} = step) do
-    # find parent step by name in flow
-    %__MODULE__{workflow | flow:
+  def add_step(%__MODULE__{flow: flow} = workflow, parent_step_name, %Step{} = child_step) do
+    case get_step_by_name(workflow, parent_step_name) do
+      {:ok, parent_step} ->
+        %__MODULE__{workflow | flow:
+          flow
+          |> Graph.add_vertex(child_step, [child_step.hash, child_step.name])
+          |> Graph.add_edge(parent_step, child_step, label: {parent_step.hash, child_step.hash})
+        }
+
+      {:error, :step_not_found} ->
+        {:error, "A step named #{parent_step_name} was not found"}
+    end
+  end
+
+  @doc """
+  Fetches a step from the workflow provided the unique name.
+
+  Returns an error if a step by the name given is not found.
+  """
+  def get_step_by_name(%__MODULE__{flow: flow}, step_name) do
+    case (
       flow
-      |> Graph.add_vertex()
-    }
+      |> Graph.vertices() # todo: think about a cheaper way to do this...
+      |> Enum.find({:error, :step_not_found}, fn %Step{name: name} -> step_name == name end)
+    ) do
+      {:error, _} = error -> error
+      step -> {:ok, step}
+    end
   end
 
   @doc """
-  Adds an accumulator for managing stateful decision making.
+  Adds an accumulator to a Workflow.
 
-  Since accumulators produce state-changed type facts, to react to state changes you add
-  rules with conditions that match on an accumulator's facts for side effects.
+  [Accumulators]() are used to collect some state for which to make further decision upon.
+
+  You can think of an accumulator as a set of reducer functions
   """
-  def add_accumulator(%Accumulator{} = accumulator) do
+  def add_accumulator(%__MODULE__{flow: flow} = workflow, accumulator) do
+    %Accumulator{initializer: initializer, state_reactors: state_reactors} = accumulator
 
-  end
-
-  @doc """
-  Hashes steps and facts so they're easily found and routed to in a workflow graph.
-
-  Facts are hashed as the tuple of the input_fact produced by the parent and the work_step that consumes the fact.
-
-  fact_hash = { hash(input), hash(work) }
-
-  Edges or paths that represent dependencies between steps are modeled as a tuple of the hash of the parent step's work function
-  and the hash of the dependent step's work function.
-
-  edge = { hash(parent_step), hash(dependent_step) }
-
-  This way when a new fact is emitted as a reaction in the graph a runner is able to easily traverse the graph to find the steps it needs to feed
-  a fact.
-  """
-  def hash(%Fact{} = input_fact, %Step{} = work_step) do
-
-  end
-
-  def hash(%Step{}) do
+    workflow = add_rule(workflow, initializer)
 
   end
 end

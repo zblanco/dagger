@@ -23,7 +23,7 @@ defmodule Dagger.Workflow.Fact do
   @type t() :: %__MODULE__{
     value: value(),
     hash: hash(),
-    type: :reaction | :state_changed,
+    type: :reaction | :state_produced,
   }
 
   @typedoc """

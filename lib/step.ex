@@ -1,5 +1,11 @@
 defmodule Dagger.Step do
   @moduledoc """
+  **Warning **: this implementation was a proof of concept using nested maps originally implemented within Libu for a basic NLP pipeline.
+
+  It has some issues such as error handling, and potential size of the nested steps and result inputs being expanded during operation.
+
+  But it is a pretty simple dataflow dependency graph built with nested steps/maps. And it works.
+
   A step represents a recipe of dependent calculations to make for a given input.
 
   Dagger Steps model dependent operations that can be run concurrently by a runner.

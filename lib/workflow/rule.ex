@@ -7,6 +7,8 @@ defmodule Dagger.Workflow.Rule do
   Instead of a function we might make Condition a Runnable by following a protocol so abstractions of conditional logic
     can be extended upon more naturally. Ultimately Conditions and Reactions become steps, the protocol would just
     convert a more complex condition into smaller pieces in the case that reactions to specific clauses are added.
+
+  Rules are useful constructs to have persisted and indexed for runtime addition to an existing workflow.
   """
   use Norm
   defstruct name: nil,
@@ -21,6 +23,18 @@ defmodule Dagger.Workflow.Rule do
     reaction: function(),
   }
 
+  @doc """
+  ## Example
+
+  ```elixir
+  Rule.new(
+    name: "my_rule",
+    description: "A test rule",
+    condition: fn _ -> true end, # anonymous function that always returns a boolean
+    reaction: fn _ -> IO.puts "I'm triggered!" end
+  )
+  ```
+  """
   def new(params) do
     struct!(__MODULE__, params)
   end
