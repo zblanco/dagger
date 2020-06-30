@@ -3,9 +3,6 @@ defmodule Dagger.Workflow.Spec do
   Sudo-code typespec of the Dagger workflow specification to tie down a more formalized picture of what we're thinking.
   """
 
-  @typedoc """
-
-  """
   # @type step() :: {work: fn _any -> %Fact{}}
 
   # @type flow_graph() :: DirectedAcyclicGraph.t(
@@ -25,23 +22,21 @@ defmodule Dagger.Workflow.Spec do
   # @type accumulator() :: %Accumulator{
   #   initiator: %Rule{
   #     condition: condition(),
-  #     reaction: fn _ -> %Fact{type: :state_changed},
+  #     reaction: fn _ -> %Fact{type: :state_produced},
   #   },
   #   state_reactors: [
   #     %Rule{
-  #       condition: fn %Fact{type: :state_changed, value: _current_state} and fact() -> boolean() end,
-  #       reaction: fn _parent_condition_true -> %Fact{type: :state_changed} end,
+  #       condition: fn %Fact{type: :state_produced, value: _current_state} and fact() -> boolean() end,
+  #       reaction: fn _parent_condition_true -> %Fact{type: :state_produced} end,
   #     }
   #     # ...
   #   ]
   # }
 
   # @type aggregate() || process_manager() :: {accumulator(), [%Rule{
-  #   condition: %Fact{type: :state_changed},
+  #   condition: %Fact{type: :state_produced},
   #   reaction: fn _condition_true -> fact()
   # }]}
 
   # @type fact() :: hash( {step(), input_value, result_value} )
-
-
 end

@@ -1,5 +1,5 @@
 %{
-  "libgraph": {:hex, :libgraph, "0.13.3", "20732b7bafb933dcf7351c479e03076ebd14a85fd3202c67a1c197f4f7c2466b", [:mix], [], "hexpm"},
-  "norm": {:hex, :norm, "0.10.2", "393944ffa4309f198827266e423974bc69aa42fd8d8784a2c98453d3c852d1c7", [:mix], [], "hexpm"},
-  "uuid": {:hex, :uuid, "1.1.8", "e22fc04499de0de3ed1116b770c7737779f226ceefa0badb3592e64d5cfb4eb9", [:mix], [], "hexpm"},
+  "libgraph": {:hex, :libgraph, "0.13.3", "20732b7bafb933dcf7351c479e03076ebd14a85fd3202c67a1c197f4f7c2466b", [:mix], [], "hexpm", "78f2576eef615440b46f10060b1de1c86640441422832052686df53dc3c148c6"},
+  "norm": {:hex, :norm, "0.10.4", "3243baed73db6c9b54175a8f473bdac20f311a2b39415e3de0a6d205df767492", [:mix], [], "hexpm", "51884375a00a6f0c7206612543e268435662808c817f787bb3b544617f6a9174"},
+  "uuid": {:hex, :uuid, "1.1.8", "e22fc04499de0de3ed1116b770c7737779f226ceefa0badb3592e64d5cfb4eb9", [:mix], [], "hexpm", "c790593b4c3b601f5dc2378baae7efaf5b3d73c4c6456ba85759905be792f2ac"},
 }

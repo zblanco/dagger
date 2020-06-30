@@ -11,10 +11,12 @@ defmodule Dagger.Workflow.Fact do
     :value,
     :hash,
     :type,
+    :runnable,
   ]
 
   def new(params) do
     struct!(__MODULE__, params)
+    |> Map.put_new(:type, :reaction)
   end
 
   @typedoc """
@@ -23,7 +25,8 @@ defmodule Dagger.Workflow.Fact do
   @type t() :: %__MODULE__{
     value: value(),
     hash: hash(),
-    type: :reaction | :state_produced,
+    type: :reaction | :accumulation | :condition,
+    runnable: {Dagger.Workflow.Step.t(), __MODULE__.t()}
   }
 
   @typedoc """
@@ -34,11 +37,7 @@ defmodule Dagger.Workflow.Fact do
   @typedoc """
   A hash is a combination of the stream identities of prior facts and the workflow definition that handled the stream.
 
-  From the hash we can infer what runtime processes for a workflow should be fed this fact.
-
-  From the hash we can also infer if prior executions were invalid or out of date.
-
-  Because conditions/patterns are hashed to handle a given
+  From the hash we can infer what runtime processes for a workflow should be fed this fact, if prior executions were invalid or out of date.
   """
   @type hash() :: binary()
 end

@@ -1,39 +1,29 @@
 defmodule Dagger do
   @moduledoc """
-  Dagger is a tool for building and operating run-time modifiable pipelines of steps.
+  Dagger is a tool for modeling your code as a Dataflow graph of Steps.
 
-  A `Step` is a composable recipe calculations and its dependent operations.
+  Data flow dependencies are modeled as Steps (nodes) in Workflows hosting the graph structure.
 
-  Dependent operations are just more steps.
+  Steps represent a single input -> output lambda function.
 
-  When a Step is ran it is assigned a run_id and dispatched to the `Runner` specified in the Step.
+  As Facts are fed through a workflow, varous steps are activated producing more Facts.
 
-  The Runner is responsible for executing the `work` specified in the Step.
+  Further abstractions on sets of dependent Steps like Rules and Accumulators can also be added to a
+  Workflow.
 
-  The return of running `work` will be added to the Step's `result` then each dependent step's `input` will be set to the parent job.
+  Together this enables Dagger to express complex decision trees, finite state machines, data pipelines, and more.
 
-  ## How do I get results?
+  See the [Workflow]() module for more information.
 
-  Results are obtained by calling out to some other service in the `work` function or in a dependent step, also in the `work` function.
+  This core library is responsible for modeling Workflows with Steps, enforcing contracts of Step functions,
+    and defining the contract of Runners used to execute Workflows.
 
-  It's your responsibility to consume the results as needed.
+  If you just need concurrent processing of large amounts of data consider using GenStage, Broadway and/or the Flow libraries.
 
-  ## Building a
+  Dagger is used for runtime modification of a workflow where you might want to compose pieces of a workflow together.
 
-  Dagger lets you build a pipeline of steps that can be injected with inputs and delivered to a runner.
+  ## Installation and Setup
 
-  The top level API of Dagger is responsible for helping you build those pipelines of Steps,
-    assert validity of a step, and dispatch to the runner.
 
-  ```elixir
-  Do we want
-
-  some_runner = SomeRunner.new(config)
-  some_command = SomeCommand.new(params)
-
-  some_runner.run(some_command)
-
-  or Dagger.run(some_command)
-  ```
   """
 end

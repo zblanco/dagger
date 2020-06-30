@@ -19,7 +19,10 @@ defmodule Dagger.Workflow.Step do
   The Runnable protocol allows irreversable side-effects to be protected with only-once execution by breaking up
     the execution into two parts.
 
-  Step dependencies are modeled in a Workflow Graph as the tuple of the parent node's hash and the step's hash.
+  Data structures following the Runnable protocol have to convert into a something ready for execution i.e. something that
+    has both a function and the data to feed into it.
+
+  Step dependencies are modeled in a Workflow Graph as a tuple of the parent node's hash and the step's hash.
 
   i.e. `( hash(parent_step), hash(child_step) )`.
 
@@ -41,8 +44,12 @@ defmodule Dagger.Workflow.Step do
 
   Notes:
 
-  Types of steps will eventually just be Data Structure that follow the runnable protocol.
   Instead of a :condition type we have a Condition data structure that knows how to convert itself into a step.
+
+  The conflicting ideas of what Runnable is:
+
+  * an actionable pair of a function and the data to execute it with. (name suits this better)
+  * A model that can be fed facts and produce reactions
   """
   alias Dagger.Workflow.{Rule, Step, Fact}
 
@@ -53,7 +60,7 @@ defmodule Dagger.Workflow.Step do
 
   defstruct name: nil,
             work: nil,
-            type: nil,
+            type: :reaction,
             hash: nil
 
   def new(params) do
@@ -66,7 +73,7 @@ defmodule Dagger.Workflow.Step do
       name: rule.name,
       work: rule.condition,
       type: :condition,
-      hash: work_hash(rule.condition),
+      # hash: work_hash(rule.condition),
     }
   end
 
@@ -75,28 +82,38 @@ defmodule Dagger.Workflow.Step do
       name: rule.name,
       work: rule.reaction,
       type: :reaction,
-      hash: work_hash(rule.reaction),
+      # hash: work_hash(rule.reaction),
     }
   end
 
   # todo: inject hashing method as dependency
-  defp work_hash({m, f}),
-    do: :erlang.phash2(:erlang.term_to_binary(Function.capture(m, f, 1)))
-  defp work_hash(work) when is_function(work, 1),
-    do: :erlang.phash2(:erlang.term_to_binary(work))
+  # defp work_hash({m, f}),
+  #   do: :erlang.phash2(:erlang.term_to_binary(Function.capture(m, f, 1)))
+  # defp work_hash(work) when is_function(work, 1),
+  #   do: :erlang.phash2(:erlang.term_to_binary(work))
 
-  defp fact_hash({m, f}, value),
-    do: :erlang.phash2(:erlang.term_to_binary({Function.capture(m, f, 1), value}))
-  defp fact_hash(work, value) when is_function(work, 1),
-    do: :erlang.phash2(:erlang.term_to_binary({work, value}))
+  # defp fact_hash({m, f}, value),
+  #   do: :erlang.phash2(:erlang.term_to_binary({Function.capture(m, f, 1), value}))
+  # defp fact_hash(work, value) when is_function(work, 1),
+  #   do: :erlang.phash2(:erlang.term_to_binary({work, value}))
 
-  def run(%Step{work: {m, f} = work}, %Fact{} = fact) do
+  def run(%Step{work: {m, f}} = step, %Fact{} = fact) do
     result_value = apply(m, f, [fact.value])
-    Fact.new(value: result_value, hash: fact_hash(work, result_value))
+    Fact.new(
+      value: result_value,
+      # hash: fact_hash(work, result_value),
+      type: step.type,
+      runnable: {step, fact}
+    )
   end
 
-  def run(%Step{work: work}, %Fact{} = fact) when is_function(work) do
+  def run(%Step{work: work} = step, %Fact{} = fact) when is_function(work) do
     result_value = work.(fact.value)
-    Fact.new(value: result_value, hash: fact_hash(work, result_value))
+    Fact.new(
+      value: result_value,
+      # hash: fact_hash(work, result_value),
+      type: step.type,
+      runnable: {step, fact}
+    )
   end
 end

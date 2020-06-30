@@ -30,7 +30,7 @@ defmodule Dagger.Workflow.Rule do
   Rule.new(
     name: "my_rule",
     description: "A test rule",
-    condition: fn _ -> true end, # anonymous function that always returns a boolean
+    condition: fn _ -> true end,
     reaction: fn _ -> IO.puts "I'm triggered!" end
   )
   ```
@@ -39,8 +39,12 @@ defmodule Dagger.Workflow.Rule do
     struct!(__MODULE__, params)
   end
 
+  # spec(fn any() -> boolean() end)
+
   def set_condition(%__MODULE__{} = rule, condition) when is_function(condition) do
     # validate boolean pattern constraints
+    # a condition is a function that always returns a boolean no matta what
+    # feed a variety of data into the condition (stream data gen?)
     %__MODULE__{rule | condition: condition}
   end
 

@@ -36,12 +36,17 @@ defmodule Dagger.Workflow.Accumulator do
 
   ```
   """
+  use Norm
   alias Dagger.Workflow.{Rule, Fact}
 
   defstruct [
     :initializer, # rule where the condition consumes a fact that isn't a `state_produced` of this accumulator
     :state_reactors, # rules where the condition matches on an external fact and a state_produced fact of this accumulator.
   ]
+
+  def reaction_fact(), do: spec(&match?(&1, %Fact{type: :reaction}))
+
+  def state_produced_fact(), do: spec(&match?(&1, %Fact{type: :state_produced}))
 
   @doc """
   Initialize a new Accumulator with just an Initializer Rule.
@@ -60,10 +65,8 @@ defmodule Dagger.Workflow.Accumulator do
     %__MODULE__{initializer: initializer, state_reactors: state_reactors}
   end
 
-  @spec add_state_reactor_rule(Dagger.Workflow.Accumulator.t(), Dagger.Workflow.Rule.t()) ::
-          Dagger.Workflow.Accumulator.t()
   def add_state_reactor_rule(%__MODULE__{state_reactors: [] = state_reactors} = accumulator, %Rule{} = state_reactor) do
-    # todo: validate state_reactors meet contract
+    # todo: validate state_reactors meet contract of an AND
     %__MODULE__{accumulator | state_reactors: [state_reactors | state_reactor]}
   end
 end

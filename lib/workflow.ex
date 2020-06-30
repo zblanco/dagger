@@ -257,7 +257,7 @@ defmodule Dagger.Workflow do
 
   ## Workflows are built with:
 
-  ## Steps - pipeline (data flow dependency) construct
+  ### Steps - pipeline (data flow dependency) construct
 
   A Step accepts an input of a fact stream transforms and returns a new fact.
 
@@ -267,28 +267,35 @@ defmodule Dagger.Workflow do
 
   input :: Stream<Fact>(id: hash-of-parent-work-function <> hash-of-data-produced)
 
+  ## Facts
+
+  All Steps added to a Workflow are wrapped to return Facts.
+
+  Facts are used as Tokens to activate nodes in a workflow.
+
   ## Rules
 
   At least two steps where the first returns a boolean expression fact
 
-  ## Accumulator
+  ## Accumulators
 
-  Returns a :state_changed type fact.
+  Returns a :state_produced type fact.
 
   ** should we enforce a fact protocol? **
 
   Workflow.new()
   |> Workflow.add_step(my_rule)
   """
-  alias Dagger.Workflow.{Rule, Fact, Accumulator, Step}
+  alias Dagger.Workflow.{Rule, Accumulator, Step, Fact}
 
   @type t() :: %__MODULE__{
-    name: String.t(),
-    flow: Graph.t(),
-    hash: binary()
-  }
+          name: String.t(),
+          flow: Graph.t(),
+          hash: binary()
+        }
 
-  @type runnable() :: {fun(), term()} # | %Runnable{}
+  # | %Runnable{}
+  @type runnable() :: {fun(), term()}
 
   @enforce_keys [:name]
 
@@ -308,15 +315,106 @@ defmodule Dagger.Workflow do
 
   defp root(), do: :root
 
+  @spec react(Workflow.t(), input :: term() | Enumerable.t()) :: Enumerable.t() | list(Fact.t())
   @doc """
   Returns signed runnables that when executed may result in side effects.
 
   A runnable holds everything necessary for a "reaction" or potential side effect to occur without actually executing the operation.
 
-  Reactions in a workflow are two-phase. Exposing intentions of some action with the `value` fact paired with the work function to apply it to.
-  """
-  def react(workflow, stream) do
+  Reactions in a workflow are two-phase. Exposing intentions of some action using a `value` fact paired with the work function to apply it to.
 
+  Atomic runnables are a function and a an arbitrary term to feed into it.
+
+  Functions can be MFA tuples, or elixir functions using the `&MyModule.my_func/arity` syntax.
+
+  Runnables are compiled into Workflows as Steps (for functions) which produce additional Facts (for terms)
+    that also include ancestral hashes to connect it to a path of execution.
+
+  Any individual atomic runnable executed might return another runnable containing
+    either a workflow (a composite set of steps) or simply a step with the next fact to feed it.
+
+  Runnable Layers of Abstraction:
+
+  Workflows & Streams -> Steps & Facts -> Functions & Terms (Atomic)
+
+  Steps and Facts represent the execution in context of it's parent ancestors that produced it.
+
+  Workflows and Streams are composites representing a network of dependent steps and a stream that can be pulled from.
+
+  This execution flow means that it's possible to write an infinite loop.
+
+  But it's also powerful for dynamically reacting to infinite streams of data
+    and scalable if we have a dynamic task graph describing paralellization opportunities.
+
+  The purpose of a workflow reaction is to break down the composite runnables into atomic runnables.
+
+  This is done by returning a stream which represents the progress of the workflow as a fact produces more facts.
+
+  This is meant to be an API for a Dagger Runtime implementation so we want the results from enumerating the stream
+    contain metadata needed to orchestrate the paralellism opportunities available.
+  """
+  def react(workflow, facts) when is_list(facts) do
+    facts
+    |> Stream.map(&Fact.new(value: &1))
+    |> Stream.map(&do_react(workflow, &1))
+    |> Stream.unfold(fn # what do we do with each fact/runnable? We want to emit facts pulled out from the stream, but do we want to emit runnables too?
+      %{runnables: runnables, facts: facts} = acc -> # consider always returning the runnable chains with ancestry allowing hashing of products
+        {acc, %{acc | facts: facts}}
+    end)
+  end
+
+  # a single fact
+  defp do_react(%__MODULE__{flow: flow}, %Fact{} = fact) do
+    flow
+    |> next_steps(:root)
+    |> Enum.map(&Step.run(&1, fact))
+    |> Enum.reduce(
+      # might not need the facts :P
+      %{runnables: [], facts: []},
+      fn
+        %Fact{type: :condition, runnable: {ancestor_step, ancestor_fact}, value: true},
+        %{runnables: runnables} = acc ->
+          new_runnables =
+            flow
+            |> next_steps(ancestor_step)
+            |> Enum.map(&{&1, %Fact{ancestor_fact | runnable: nil}})
+
+          %{acc | runnables: [new_runnables | runnables]}
+
+        %Fact{type: :condition}, acc ->
+          acc
+
+        %Fact{runnable: {ancestor_step, _ancestor_fact}} = fact, %{runnables: runnables} = acc ->
+          new_runnables =
+            flow
+            |> next_steps(ancestor_step)
+            |> Enum.map(&{&1, %Fact{fact | runnable: nil}})
+
+          %{acc | runnables: [new_runnables | runnables]}
+      end
+    )
+
+    # for each activation child step of a condition we:
+    # if the step is a conditional, we check if true, then we execute that nodes children
+    # if the step is a reaction we execute the step.run
+    # then pass the fact into a list accumulator (reduce)
+    #
+  end
+
+  defp next_steps(flow, parent_step) do
+    Graph.out_neighbors(flow, parent_step)
+  end
+
+  def show(%__MODULE__{flow: flow} = workflow) do
+    with {:ok, graph} <- Graph.to_dot(flow) do
+      IO.write("\n")
+      IO.write("\n")
+      IO.puts(graph)
+      IO.write("\n")
+      IO.write("\n")
+    end
+
+    workflow
   end
 
   @doc """
@@ -332,27 +430,53 @@ defmodule Dagger.Workflow do
     condition_step = Step.of_condition(rule)
     reaction_step = Step.of_reaction(rule)
 
-    %__MODULE__{workflow | flow:
-      flow
-      |> Graph.add_vertex(condition_step, [condition_step.hash, condition_step.name])
-      |> Graph.add_vertex(reaction_step, [reaction_step.hash, reaction_step.name])
-      |> Graph.add_edge(root(), condition_step, label: {:root, condition_step.hash})
-      |> Graph.add_edge(condition_step, reaction_step, label: {condition_step.hash, reaction_step.hash})
+    %__MODULE__{
+      workflow
+      | flow:
+          flow
+          |> Graph.add_vertex(condition_step, [condition_step.hash, condition_step.name])
+          |> Graph.add_vertex(reaction_step, [reaction_step.hash, reaction_step.name])
+          |> Graph.add_edge(root(), condition_step, label: {:root, condition_step.hash})
+          |> Graph.add_edge(condition_step, reaction_step,
+            label: {condition_step.hash, reaction_step.hash}
+          )
     }
+  end
+
+  def add_rule(workflow, opts) when is_map(opts) or is_list(opts) do
+    add_rule(workflow, Rule.new(opts))
   end
 
   @doc """
   Adds a dependent step to some other step in a workflow by name.
 
   The dependent step is fed signed facts produced by the parent step during a reaction.
+
+  Adding dependent steps is the most low-level way of building a dataflow execution graph as it assumes no conditional, branching logic.
+
+  If you're just building a pipeline, dependent steps can be sufficient, however you might want Rules for conditional branching logic.
   """
+  def add_step(%__MODULE__{flow: flow} = workflow, :root, %Step{} = child_step) do
+    %__MODULE__{
+      workflow
+      | flow:
+          flow
+          |> Graph.add_vertex(child_step, [child_step.hash, child_step.name])
+          |> Graph.add_edge(:root, child_step, label: {:root, child_step.hash})
+    }
+  end
+
   def add_step(%__MODULE__{flow: flow} = workflow, parent_step_name, %Step{} = child_step) do
     case get_step_by_name(workflow, parent_step_name) do
       {:ok, parent_step} ->
-        %__MODULE__{workflow | flow:
-          flow
-          |> Graph.add_vertex(child_step, [child_step.hash, child_step.name])
-          |> Graph.add_edge(parent_step, child_step, label: {parent_step.hash, child_step.hash})
+        %__MODULE__{
+          workflow
+          | flow:
+              flow
+              |> Graph.add_vertex(child_step, [child_step.hash, child_step.name])
+              |> Graph.add_edge(parent_step, child_step,
+                label: {parent_step.hash, child_step.hash}
+              )
         }
 
       {:error, :step_not_found} ->
@@ -360,17 +484,29 @@ defmodule Dagger.Workflow do
     end
   end
 
+  # def add_workflow(%__MODULE__{flow: flow} = parent_workflow, parent_connector_step_or_hash_or_step_name, %__MODULE__{flow: child_flow} = child_workflow) do
+  #   # how would we merge two workflow graphs? do we have to?
+  #   #
+  # end
+
   @doc """
   Fetches a step from the workflow provided the unique name.
 
   Returns an error if a step by the name given is not found.
   """
+  def get_step_by_name(_workflow, :root), do: {:ok, :root}
+
   def get_step_by_name(%__MODULE__{flow: flow}, step_name) do
-    case (
-      flow
-      |> Graph.vertices() # todo: think about a cheaper way to do this...
-      |> Enum.find({:error, :step_not_found}, fn %Step{name: name} -> step_name == name end)
-    ) do
+    case flow
+         # todo: think about a cheaper way to do this...
+         |> Graph.vertices()
+         |> Enum.find(
+           {:error, :step_not_found},
+           fn
+             %Step{name: name} -> step_name == name
+             :root -> false
+           end
+         ) do
       {:error, _} = error -> error
       step -> {:ok, step}
     end
@@ -379,14 +515,17 @@ defmodule Dagger.Workflow do
   @doc """
   Adds an accumulator to a Workflow.
 
-  [Accumulators]() are used to collect some state for which to make further decision upon.
+  `Dagger.Accumulators` are used to collect some state for which to make further decision upon.
 
-  You can think of an accumulator as a set of reducer functions
+  You can think of an accumulator as a set of reducer functions that react over a shared state.
+
+  See the `Dagger.Accumulator module` for more details.
   """
-  def add_accumulator(%__MODULE__{flow: flow} = workflow, accumulator) do
+  def add_accumulator(%__MODULE__{} = workflow, accumulator) do
     %Accumulator{initializer: initializer, state_reactors: state_reactors} = accumulator
 
-    workflow = add_rule(workflow, initializer)
-
+    Enum.reduce(state_reactors, add_rule(workflow, initializer), fn reactor, workflow ->
+      add_rule(workflow, reactor)
+    end)
   end
 end

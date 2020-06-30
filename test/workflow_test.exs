@@ -3,39 +3,39 @@ defmodule WorkflowText do
   alias Dagger.{Workflow, Rule, Step}
   alias Dagger.TestRunner
 
-  describe "workflows" do
-
-    test "a workflow reacts to pure facts as inputs" do
-      rule1 = Rule.new(
-        name: "a test rule",
-        condition: fn :fact_1 -> true end, # condition is a function which matches on a fact and returns a boolean
-        description: "Given fact 1 occuring this rule reacts to fact 1",
-        reaction: fn :fact_1 -> :reacting_to_fact_1, # a function that is given the activation condition/facts of the rule or just an arbitrary term.
-      )
-
-      rule2 = Rule.new(
-        name: "a test rule",
-        condition: fn :fact_2 -> true end, # condition is a function which matches on a fact and returns a boolean
-        description: "Given fact 2 occuring this rule reacts to fact 2",
-        reaction: fn :fact_2 -> :reacting_to_fact_2, # a function that is given the activation condition/facts of the rule or just an arbitrary term.
-      )
-
-      workflow =
-        Workflow.new("testworkflow", fn :test_event -> true end)
-        |> Workflow.add_rule(rule1)
-        |> Workflow.add_rule(rule2)
-
-      assert {:ok, :reacting_to_fact_1, workflow} == Workflow.react(:fact_1)
-      assert {:ok, :reacting_to_fact_2, workflow} == Workflow.react(:fact_2)
+  defmodule TextProcessing do
+    def tokenize(text) do
+      text
+      |> String.downcase
+      |> String.split(~R/[^[:alnum:]\-]/u, trim: true)
     end
 
-    test "a workflow compiles rules into a graph of dependent steps" do
-      assert false
+    def count_words(list_of_words) do
+      list_of_words
+      |> Enum.reduce(Map.new, fn(word, map) ->
+        Map.update(map, word, 1, &(&1 + 1))
+      end)
     end
   end
 
-  describe "rule constructor constraints" do
-    test "a rule needs required params to be created" do
+  defmodule Counting do
+    def initiator(:start_count), do: true
+    def initiation(_), do: 0
+
+    def do_increment?(:count, count), do: true
+    def incrementer(count) when is_integer(count), do: count + 1
+  end
+
+  defmodule Lock do
+    def locked?(:locked), do: true
+    def locked?(_), do: false
+
+    def lock(_), do: :locked
+    def unlock(_), do: :unlocked
+  end
+
+  describe "rules" do
+    test "construction with new/1" do
       assert false
     end
 
@@ -47,10 +47,9 @@ defmodule WorkflowText do
       assert false
     end
 
-    test "a rule's reaction " do
+    test "a rule's reaction always returns a fact" do
       assert false
     end
-
   end
 
   describe "workflow composition" do
@@ -60,16 +59,66 @@ defmodule WorkflowText do
   end
 
   describe "use cases" do
-    test "approval procedure" do
-      assert false
+
+    test "counter accumulation with triggers" do
+      wrk =
+        Workflow.new(name: "counter accumulator")
+        |> Workflow.add_accumulator(Accumulator.new(
+          Rule.new(
+            name: "counter accumulator initiation",
+            description: "A rule that reacts to a :start_count message by starting a counter at 0",
+            condition: &Counting.initiator/1, # trigger for accumulation
+            reaction: &Counting.initiation/1 # sets initial state (initial state wants the initiating fact - conditions just activate)
+          ),
+          [ # state reactors match on both current state AND other conditions
+            Rule.new(
+              name: "counter incrementer",
+              description: "A rule that reacts to a command to increment with the current counter state",
+              condition: &Counting.do_increment?/2, # accumulator conditions handle a Condition clause with two arguments OR a Condition with at least a state and another fact
+              reaction: &Counting.incrementer/1
+            ),
+          ]
+        ))
+
+      reactions = Workflow.react(wrk, [:start_count, :count, :count, :count])
+      assert match?(List.last(reactions), %Fact{type: :state_produced, value: 2})
     end
 
-    test "coffee shop fsm" do
+    test "simple lock" do
+      wrk =
+        Workflow.new(name: "simple lock")
+        |> Workflow.add_accumulator(
+          name: "represents the state of a lock",
+          init: :locked,
+          reactors: [
+            Rule.new(
+              name: "unlocks a locked lock",
+              description: "if locked, unlocks",
+              condition: &Lock.locked?/2,
+              reaction: &Lock.unlock/1
+            ),
+            Rule.new(
+              name: "locks an unlocked lock",
+              description: "if locked, unlocks",
+              condition: &Lock.unlocked?/2,
+              reaction: &Lock.unlock/1
+            ),
+          ]
+        )
+
       assert false
     end
 
     test "text processing pipeline" do
-      assert false
+      wrk =
+        Workflow.new(name: "basic text processing pipeline")
+        |> Workflow.add_step(:root, Step.new(name: "tokenize", work: TextProcessing.tokenize/1))
+        |> Workflow.add_step("tokenize", Step.new(name: "count words", work: TextProcessing.count_words/1))
+
+      reaction = Workflow.react(wrk, "anybody want a peanut")
+
+      assert match?(reaction, %Fact{})
+      assert reaction.value == 4
     end
   end
 
