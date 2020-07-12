@@ -308,6 +308,10 @@ defmodule Dagger.Workflow do
   """
   @type flow() :: Graph.t()
 
+  def new(name) when is_binary(name) do
+    new(name: name)
+  end
+
   def new(params) do
     struct!(__MODULE__, params)
     |> Map.put(:flow, Graph.new() |> Graph.add_vertex(root()))
@@ -315,7 +319,7 @@ defmodule Dagger.Workflow do
 
   defp root(), do: :root
 
-  @spec react(Workflow.t(), input :: term() | Enumerable.t()) :: Enumerable.t() | list(Fact.t())
+  # @spec react(Workflow.t(), input :: term() | Enumerable.t()) :: Enumerable.t() | list(Fact.t())
   @doc """
   Returns signed runnables that when executed may result in side effects.
 
@@ -350,55 +354,108 @@ defmodule Dagger.Workflow do
 
   This is done by returning a stream which represents the progress of the workflow as a fact produces more facts.
 
-  This is meant to be an API for a Dagger Runtime implementation so we want the results from enumerating the stream
-    contain metadata needed to orchestrate the paralellism opportunities available.
+  This is meant to be an API for a Dagger Runtime implementation so we want the results from enumerating the stream to
+    contain metadata needed to orchestrate the parallellism opportunities available.
   """
   def react(workflow, facts) when is_list(facts) do
-    facts
-    |> Stream.map(&Fact.new(value: &1))
-    |> Stream.map(&do_react(workflow, &1))
-    |> Stream.unfold(fn # what do we do with each fact/runnable? We want to emit facts pulled out from the stream, but do we want to emit runnables too?
-      %{runnables: runnables, facts: facts} = acc -> # consider always returning the runnable chains with ancestry allowing hashing of products
-        {acc, %{acc | facts: facts}}
-    end)
+    Stream.resource(
+      initial_reaction(workflow, facts),
+      fn
+        %{runnables: nil, facts: facts} ->
+          {:halt, facts}
+
+        %{runnables: runnables, facts: facts} = acc ->
+          %{runnables: next_runnables, facts: new_facts} =
+            runnables
+            |> Enum.map(&do_react(workflow, &1))
+            |> Enum.reduce(%{facts: [], runnables: []}, fn
+              {fact, runnables}, acc ->
+                %{acc | facts: [fact | acc.facts], runnables: [runnables | acc.runnables]}
+            end)
+
+          next_runnables_or_nil =
+            case Enum.empty?(next_runnables |> List.flatten) do
+              true -> nil
+              _ -> next_runnables
+            end
+
+          facts_so_far = [new_facts | facts] |> List.flatten()
+
+          {facts_so_far,
+           %{
+             acc
+             | facts: facts_so_far,
+               runnables: next_runnables_or_nil
+           }}
+      end,
+      fn acc -> acc end
+    )
   end
 
-  # a single fact
-  defp do_react(%__MODULE__{flow: flow}, %Fact{} = fact) do
+  def react(workflow, fact), do: react(workflow, [fact])
+
+  # common runnable activations always return {fact, next_runnables}
+  def do_react(%__MODULE__{flow: flow}, {%Step{} = step, %Fact{} = fact}) do
+    case Step.run(step, fact) do
+      %Fact{type: :condition, runnable: {ancestor_step, ancestor_fact}, value: true} = fact ->
+        next_runnables =
+          flow
+          |> next_steps(ancestor_step)
+          |> Enum.map(&{&1, %Fact{ancestor_fact | runnable: nil}})
+
+        {fact, next_runnables}
+
+      # conditions that do not return true don't have any child runnables
+      %Fact{type: :condition} = fact ->
+        {fact, nil}
+
+      %Fact{type: :reaction, runnable: {ancestor_step, _ancestor_fact}} = fact ->
+        next_runnables =
+          flow
+          |> next_steps(ancestor_step)
+          |> Enum.map(&{&1, %Fact{fact | runnable: nil}})
+
+        {fact, next_runnables}
+    end
+  end
+
+  # initial pass through conditions
+  def do_react(%__MODULE__{flow: flow} = workflow, %Fact{} = fact) do
     flow
     |> next_steps(:root)
-    |> Enum.map(&Step.run(&1, fact))
+    |> Enum.map(&{&1, fact})
+    |> Enum.map(&do_react(workflow, &1))
     |> Enum.reduce(
-      # might not need the facts :P
       %{runnables: [], facts: []},
       fn
-        %Fact{type: :condition, runnable: {ancestor_step, ancestor_fact}, value: true},
-        %{runnables: runnables} = acc ->
-          new_runnables =
-            flow
-            |> next_steps(ancestor_step)
-            |> Enum.map(&{&1, %Fact{ancestor_fact | runnable: nil}})
+        {new_fact, nil}, %{facts: facts} = acc ->
+          %{acc | facts: [new_fact | facts]}
 
-          %{acc | runnables: [new_runnables | runnables]}
-
-        %Fact{type: :condition}, acc ->
-          acc
-
-        %Fact{runnable: {ancestor_step, _ancestor_fact}} = fact, %{runnables: runnables} = acc ->
-          new_runnables =
-            flow
-            |> next_steps(ancestor_step)
-            |> Enum.map(&{&1, %Fact{fact | runnable: nil}})
-
-          %{acc | runnables: [new_runnables | runnables]}
+        {new_fact, new_runnables}, %{facts: facts} = acc ->
+          %{acc | runnables: new_runnables, facts: [new_fact | facts]}
       end
     )
+  end
 
-    # for each activation child step of a condition we:
-    # if the step is a conditional, we check if true, then we execute that nodes children
-    # if the step is a reaction we execute the step.run
-    # then pass the fact into a list accumulator (reduce)
-    #
+  defp initial_reaction(workflow, raw_facts) do
+    fn ->
+      facts = Enum.map(raw_facts, &Fact.new(value: &1))
+
+      %{facts: new_facts} =
+        initial_reaction =
+        facts
+        |> Enum.map(&do_react(workflow, &1))
+        |> Enum.reduce(
+          %{facts: [], runnables: []},
+          fn reaction, %{facts: facts, runnables: runnables} = acc ->
+            %{acc | facts: [reaction.facts | facts], runnables: [reaction.runnables | runnables]}
+          end
+        )
+        |> Enum.map(fn {k, v} -> {k, List.flatten(v)} end)
+        |> Map.new()
+
+      %{initial_reaction | facts: [new_facts | facts] |> List.flatten}
+    end
   end
 
   defp next_steps(flow, parent_step) do

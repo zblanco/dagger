@@ -1,6 +1,7 @@
 defmodule WorkflowText do
   use ExUnit.Case
-  alias Dagger.{Workflow, Rule, Step}
+  alias Dagger.Workflow.{Rule, Step, Fact}
+  alias Dagger.Workflow
   alias Dagger.TestRunner
 
   defmodule TextProcessing do
@@ -112,8 +113,8 @@ defmodule WorkflowText do
     test "text processing pipeline" do
       wrk =
         Workflow.new(name: "basic text processing pipeline")
-        |> Workflow.add_step(:root, Step.new(name: "tokenize", work: TextProcessing.tokenize/1))
-        |> Workflow.add_step("tokenize", Step.new(name: "count words", work: TextProcessing.count_words/1))
+        |> Workflow.add_step(:root, Step.new(name: "tokenize", work: &TextProcessing.tokenize/1))
+        |> Workflow.add_step("tokenize", Step.new(name: "count words", work: &TextProcessing.count_words/1))
 
       reaction = Workflow.react(wrk, "anybody want a peanut")
 

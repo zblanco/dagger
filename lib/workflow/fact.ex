@@ -7,16 +7,13 @@ defmodule Dagger.Workflow.Fact do
   This hash is used to find the next steps in the workflow that need to be fed this fact.
   """
   # import Norm
-  defstruct [
-    :value,
-    :hash,
-    :type,
-    :runnable,
-  ]
+  defstruct value: nil,
+            hash: nil,
+            type: :reaction,
+            runnable: nil
 
   def new(params) do
     struct!(__MODULE__, params)
-    |> Map.put_new(:type, :reaction)
   end
 
   @typedoc """
@@ -26,7 +23,7 @@ defmodule Dagger.Workflow.Fact do
     value: value(),
     hash: hash(),
     type: :reaction | :accumulation | :condition,
-    runnable: {Dagger.Workflow.Step.t(), __MODULE__.t()}
+    runnable: {Dagger.Workflow.Step.t(), __MODULE__.t()} | nil
   }
 
   @typedoc """
