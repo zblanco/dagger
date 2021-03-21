@@ -2,11 +2,11 @@ defmodule Dagger do
   @moduledoc """
   Dagger is a tool for modeling your code as a Dataflow graph of Steps.
 
-  Data flow dependencies are modeled as Steps (nodes) in Workflows hosting the graph structure.
+  Data flow dependencies are modeled as Steps (nodes) in Workflows hosted in a graph structure.
 
   Steps represent a single input -> output lambda function.
 
-  As Facts are fed through a workflow, varous steps are activated producing more Facts.
+  As Facts are fed through a workflow, various steps are activated producing more Facts.
 
   Further abstractions on sets of dependent Steps like Rules and Accumulators can also be added to a
   Workflow.
@@ -21,6 +21,8 @@ defmodule Dagger do
   If you just need concurrent processing of large amounts of data consider using GenStage, Broadway and/or the Flow libraries.
 
   Dagger is used for runtime modification of a workflow where you might want to compose pieces of a workflow together.
+
+  If the runtime modification of a workflow isn't a requirement for your use case, don't use Dagger.
 
   ## Installation and Setup
 

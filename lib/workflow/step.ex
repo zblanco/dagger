@@ -51,7 +51,7 @@ defmodule Dagger.Workflow.Step do
   * an actionable pair of a function and the data to execute it with. (name suits this better)
   * A model that can be fed facts and produce reactions
   """
-  alias Dagger.Workflow.{Rule, Step, Fact}
+  alias Dagger.Workflow.{Rule, Step, Fact, Steps}
 
   @type type() ::
     :reaction
@@ -65,9 +65,11 @@ defmodule Dagger.Workflow.Step do
 
   def new(params) do
     struct!(__MODULE__, params)
+    |> hash_work()
   end
 
-  # FYI, these are protocol impls in disguise, todo: convert to formal structs that implement runnable protocol.
+  defp hash_work(%Step{work: work} = step), do: Map.put(step, :hash, Steps.work_hash(work))
+
   def of_condition(%Rule{} = rule) do
     %__MODULE__{
       name: rule.name,
@@ -87,33 +89,47 @@ defmodule Dagger.Workflow.Step do
   end
 
   # todo: inject hashing method as dependency
-  # defp work_hash({m, f}),
-  #   do: :erlang.phash2(:erlang.term_to_binary(Function.capture(m, f, 1)))
-  # defp work_hash(work) when is_function(work, 1),
-  #   do: :erlang.phash2(:erlang.term_to_binary(work))
+  # consider forking libgraph to allow for user-defined node hashing/id functions
 
-  # defp fact_hash({m, f}, value),
-  #   do: :erlang.phash2(:erlang.term_to_binary({Function.capture(m, f, 1), value}))
-  # defp fact_hash(work, value) when is_function(work, 1),
-  #   do: :erlang.phash2(:erlang.term_to_binary({work, value}))
+  # def run(%Step{work: {m, f}} = step, %Fact{} = fact) do
+  #   result_value = apply(m, f, [fact.value])
+  #   Fact.new(
+  #     value: result_value,
+  #     # hash: fact_hash(work, result_value),
+  #     type: step.type,
+  #     runnable: {step, fact}
+  #   )
+  # end
 
-  def run(%Step{work: {m, f}} = step, %Fact{} = fact) do
-    result_value = apply(m, f, [fact.value])
-    Fact.new(
-      value: result_value,
-      # hash: fact_hash(work, result_value),
-      type: step.type,
-      runnable: {step, fact}
-    )
-  end
+  # def run(%Step{work: work} = step, %Fact{} = fact) when is_function(work) do
+  #   result_value = work.(fact.value)
+  #   Fact.new(
+  #     value: result_value,
+  #     # hash: fact_hash(work, result_value),
+  #     type: step.type,
+  #     runnable: {step, fact}
+  #   )
+  # end
 
-  def run(%Step{work: work} = step, %Fact{} = fact) when is_function(work) do
-    result_value = work.(fact.value)
-    Fact.new(
-      value: result_value,
-      # hash: fact_hash(work, result_value),
-      type: step.type,
-      runnable: {step, fact}
-    )
-  end
+  # defimpl Dagger.Workflow.Runnable do
+  #   alias Dagger.Workflow.{
+  #     Fact,
+  #     Step,
+  #     Steps
+  #   }
+
+  #   def run(%Step{work: work, hash: work_hash} = step, %Fact{value: value, hash: fact_hash} = fact) do
+  #     result = Steps.run(work, value)
+
+  #     Fact.new(
+  #       value: result,
+  #       ancestry: {work_hash, fact_hash},
+  #       runnable: {step, fact}
+  #     )
+  #   end
+
+  #   def to_runnable(%Step{} = step, %Fact{} = fact) do
+  #     {%Step{} = step, %Fact{} = fact}
+  #   end
+  # end
 end

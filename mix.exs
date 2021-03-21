@@ -24,6 +24,7 @@ defmodule Dagger.MixProject do
       {:uuid, "~> 1.1"},
       {:libgraph, "~> 0.7"},
       {:norm, "~> 0.10.2"},
+      {:expreso, "~> 0.1.1"},
     ]
   end
 end
