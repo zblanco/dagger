@@ -1,42 +1,32 @@
 defmodule Dagger.Workflow do
   @moduledoc """
-  Dagger Workflows model dataflow dependencies between steps of lambda functions.
-
-  Dagger Workflows support both logical and data-input dependencies.
-
-  Workflows are modeled as a directed acyclic graph of `%Step{}` structs where the `work` field of the Step is a function
-  that takes a `%Fact{}` as input and returns a `%Fact{}` as output.
+  Dagger Workflows are used to compose many branching steps, rules and accumuluations/reductions
+  at runtime for lazy or eager evaluation.
 
   You can think of Dagger Workflows as a recipe of rules that when fed a stream of facts may react.
 
-  Instead of the dependencies modeled on the level of Elixir code compiled to AST (Abstract Syntax Tree)
-  we're using a graph data structure and passing lambda functions around. The trade-off is that we can
-  support modification of these constraints at runtime without going through a compilation phase however
-  we now have to enforce invariants that the compiler normally would.
+  A Workflow is usually made out of one or more Rules or other datastructures which implement the `Dagger.Runnable` protocol.
 
-  A big advantage to specifying the flow of data through dependencies in a graph is we have a model of possible
-  paralellism between steps. This is essentially a runtime behaviour contract that we can use to generate
-  a topology of processes without developer intervention. In many ways this is similar to how the `Flow`
-  library works where a datastructure modeling the flow of data is used to generate an optimized GenStage topology
-  that runs the Flow pipeline concurrently. The difference is that to get the ability to modify that flow pipeline
-  at runtime we have to also lift what would normally be elixir control flow code into the datastructure as well.
+  The Dagger.Runnable protocol facilitates a `to_workflow` transformation such that expressions like a
+    Rule or an Accumulator may be composed into a single evaluatable datastructure (a %Workflow{}).
 
-  This makes Dagger workflows good for use cases where the volume of domain constraints to model is too great
-  for the usual Business -> Developer -> Code cycle. Here we can use Dagger to as the base for a DSL or UI
-  that lets the Business users input the rules without a developer. So while Dagger isn't a full-blown
-  workflow engine like Airflow nor an Rules Engine like Drools or Camunda it can be used to build systems like that
-  without coupling the runtime concerns in the tool. At least that's the goal.
+  Any Workflow can be merged into another Workflow and evaluated together. This allows for extension
+  of domain specific entities which can simply implement the Runnable protocol to be composed with other
+  runnables at runtime.
 
-  Additionally most tools in the Workflow/Rules-Engine domain aren't made for streaming data but rather etl/batch/scheduled/periodic
-  processing. When both the Workflow of computation and the data are separate but also transportable and specified
-  for parallel processing we can transport both easily across machines in a cloud. Instead of moving the input data to a server
-  we move the operations to run on the data to where the input data is already.
+  Dagger Workflows are intended for use cases where constraints, rules, and or a "workflow" must be
+  constructed and evaluated at runtime. If your use case can be modeled upfront in compiled code using
+  the usual control flow and concurrency tools available in Elixir/Erlang - Dagger Workflows are not the tool
+  to reach for. There are performance trade-offs of doing more compilation and evaluation at runtime.
 
-  The developer is still involved but they aren't hard coding business logic in compiled code but instead
-  setting up and configuring Dagger to be constrained only to the dynamicism the domain requires. Code is
-  still written but for the 'tricky bits' like making an abstraction on top of Dagger Workflow components
-  (Rules, Conditions, Accumulators, etc) that lets the business express domain knowledge using domain language.
+  Dagger Workflows are useful for building complex data dependent pipelines, expert systems, and user defined
+  logical systems. If you do not need that level of dynamicism - Dagger Workflows are not for you.
 
+  A Dagger Workflow supports lazy evaluation of both conditional (left hand side) and steps (right hand side).
+  This allows a runtime implementation to distribute work to infrastructure specific to their needs
+  independently of the model expressed. For example a Runner implementation may want to use a Dynamically Supervised
+  GenServer, with cluster-aware registration for a given workflow, then execute conditionals eagerly, but
+  execute actual steps with side effects lazily as a GenStage pipeline with backpressure has availability.
 
   <!-- rewrite -->
   While the abstraction isn't entirely clear yet, execution of a Dagger Runnable by a Dagger.Runner could perform
@@ -296,7 +286,7 @@ defmodule Dagger.Workflow do
 
   ## Network layers
 
-  :root
+  %Root{}
     - conditions
       - joins
         - steps
@@ -308,7 +298,15 @@ defmodule Dagger.Workflow do
   Activation Protocol: how a node in a workflow interacts during evaluation
   """
   alias Dagger.Workflow.{
-    Rule, Accumulator, Step, Fact, Activation, Agenda, Runnable, Condition
+    Rule,
+    Accumulator,
+    Step,
+    Fact,
+    Activation,
+    Agenda,
+    Runnable,
+    Condition,
+    Root
   }
 
   @type t() :: %__MODULE__{
@@ -317,8 +315,7 @@ defmodule Dagger.Workflow do
           hash: binary(),
           activations: any(),
           facts: list(),
-          agenda: Agenda.t(),
-          is_pipeline?: boolean(),
+          agenda: Agenda.t()
         }
 
   @type runnable() :: {fun(), term()}
@@ -328,11 +325,9 @@ defmodule Dagger.Workflow do
   defstruct name: nil,
             hash: nil,
             flow: nil,
-            flow_map: nil,
             activations: nil,
             facts: [],
-            agenda: nil,
-            is_pipeline?: true
+            agenda: nil
 
   @typedoc """
   A discrimination network of conditions, and steps, built from composites such as rules and accumulations.
@@ -349,271 +344,104 @@ defmodule Dagger.Workflow do
   def new(params) when is_list(params) do
     struct!(__MODULE__, params)
     |> Map.put(:flow, Graph.new() |> Graph.add_vertex(root()))
-    |> Map.put(:flow_map, %{})
     |> Map.put(:activations, %{})
     |> Map.put(:agenda, Agenda.new())
-    |> Map.put(:is_pipeline?, true)
   end
 
   def new(params) when is_map(params) do
     new(Map.to_list(params))
   end
 
-  defp root(), do: :root
+  defp root(), do: %Root{}
 
   @doc """
-  Returns a stream that can be pulled from for the next set of runnables and applied.
+  For a new set of inputs, this prepares the workflow agenda for the next cycle of reactions.
 
-  Each cycle is based off of the reactions from a single fact and the context of any past activations from prior facts.
+  Planning for a new fact results in the activation protocl being invoked for each fact + step
 
-  A workflow stream is stateful in that each cycle of potential side effects produced during the activation of runnables
-    might accumulate into a network of contextual dependent activations in the case of dependent conditions.
+  In regards to an inference engine's match -> select -> execute phase, this is the match phase.
 
-  The stream should always return the new Workflow with a log of all the Facts that produced its current activation state.
+  Dagger Workflow evaluation is forward chaining meaning from the root of the graph it starts
+    by evaluating the direct children of the root node. If the workflow has any sort of
+    conditions (from rules, etc) these conditions are prioritized in the agenda for the next cycle.
 
-  So a single fact is given to the workflow. The following occurs:
-
-  * Any condition nodes, the activations network is checked for partially satisfied conditions for which this new fact will satisfy.
-    * Any leaf node / steps for which all conditions to meet the left hand side of the rule, are paired with the satisfying fact to make a runnable.
+  A runner implementation may want to eagerly evaluate conditions to prepare the full set of runnable steps.
   """
-  # def run(workflow, %Fact{} = fact) do
-  #   workflow
-  #   |> log_fact(fact)
-  #   |> plan_agenda()
-  # end
+  def plan(%__MODULE__{} = wrk, %Fact{} = fact) do
+    wrk = Activation.activate(root(), wrk, fact)
+
+    Enum.reduce(Map.values(wrk.agenda.runnables), wrk, fn {node, fact}, wrk ->
+      Activation.activate(node, wrk, fact)
+    end)
+  end
+
+  def plan(%__MODULE__{} = wrk, facts) when is_list(facts) do
+    Enum.reduce(facts, wrk, fn fact, wrk ->
+      plan(wrk, fact)
+    end)
+  end
+
+  def plan(%__MODULE__{} = wrk, raw_fact) do
+    plan(wrk, Fact.new(value: raw_fact))
+  end
+
+  def is_runnable?(%__MODULE__{agenda: agenda}) do
+    Agenda.any_runnables_for_next_cycle?(agenda)
+  end
+
+  def prune_activated_runnable(%__MODULE__{agenda: agenda} = wrk, node, fact) do
+    %__MODULE__{
+      wrk
+      | agenda: Agenda.prune_runnable(agenda, node, fact)
+    }
+  end
 
   def log_fact(%__MODULE__{facts: facts} = wrk, %Fact{} = fact) do
     %__MODULE__{wrk | facts: [fact | facts]}
   end
 
   def add_to_agenda(%__MODULE__{agenda: agenda} = wrk, runnables) when is_list(runnables) do
-    %__MODULE__{wrk | agenda: Enum.reduce(agenda, runnables, fn runnable, agenda ->
-      Agenda.add_runnable(agenda, runnable)
-    end)}
+    %__MODULE__{
+      wrk
+      | agenda:
+          Enum.reduce(runnables, agenda, fn runnable, agenda ->
+            Agenda.add_runnable(agenda, runnable)
+          end)
+    }
   end
 
-  def run(workflow, facts) when is_list(facts) do
-    Enum.reduce(facts, workflow, fn fact, wrk ->
-      next_steps = next_steps(wrk, :root)
-      next_runnables = Dagger.Workflow.Runnable.run(wrk, fact)
-    end)
-  end
-
-  def run(workflow, %Fact{} = fact) do
-    run(workflow, [fact])
-  end
-
-  defp plan_agenda(%__MODULE__{
-      facts: [%Fact{runnable: {prior_step, _prior_fact}} | _] = facts,
-      agenda: agenda,
-      activations: activations,
-      flow: flow
-  } = workflow) do
-    # find any partially activated conditions / joins, if the join is resolved, get leaf node / step
-    # get next steps
-    # build runnables
-    # append to agenda
-    # we might need to increment per cycle/generation to know whether or not to reset the agenda
-    next_steps = next_steps(workflow, prior_step) # only gets us step -> next step connections
-
-    # %__MODULE__{workflow |
-    #   agenda:
-    # }
-  end
-
-  # defp plan_agenda(%__MODULE__{facts: facts, agenda: agenda, activations: activations} = workflow) do
-  #   # %__MODULE__{workflow | # with new agenda
-
-  #   # }
-  # end
-
-  # def run(workflow, raw_fact) do
-  #   stream(workflow, Fact.new(value: raw_fact))
-  # end
-
-  defp activate_runnables(wrk, next_runnables) do
-    Enum.reduce(next_runnables, wrk, fn
-      runnable, wrk ->
-        wrk
-        |> append_facts(Activation.run(runnable))
-    end)
-  end
-
-  # a fact log / stream persistence implementation might want to be injected here
-  # interface: append_fact/2, stream_facts/2
-  # default: lists in memory, optional: ordered_set via ets,
-  defp append_facts(%__MODULE__{facts: facts} = wrk, new_facts) when is_list(new_facts) do
-    %__MODULE__{wrk | facts: [new_facts | facts]}
-  end
-
-  defp prepare_activations(%__MODULE__{} = wrk, new_facts) when is_list(new_facts) do
-
-  end
-
-  # defp next_runnables(%__MODULE__{} = wrk, %Fact{ancestry: {work_hash, _fact_hash, runnable: {parent_step, parent_fact}}}) do
-  #   # hash_to_edge_map = hash_to_edge_map(wrk)
-  #   next_step_vertex_id =
-  #     hash_to_vertex_id_map(wrk)
-  #     |> Map.get(work_hash)
-
-  #   next_steps = next_steps()
-
-  #   # next runnables for a given fact:
-  #     #
-  # end
-
-  defp hash_to_edge_map(%__MODULE__{} = wrk) do
-    wrk.flow.edges
-    |> Enum.map(fn {k, v} -> {Map.keys(v) |> List.first(), k} end)
-    |> Map.new
-  end
-
-  defp hash_to_vertex_id_map(%__MODULE__{} = wrk) do
-    wrk.flow.vertices
-    |> Enum.map(fn
-      {k, :root} -> {:root, k}
-      {k, v} -> {v.hash, k}
-    end)
-    |> Map.new()
-  end
-
-  # @spec react(Workflow.t(), input :: term() | Enumerable.t()) :: Enumerable.t() | list(Fact.t())
   @doc """
-  Returns a lazy stream of facts and runnables for a given workflow.
+  Runs a runnable workflow by executing steps ready in the agenda.
 
-  Each cycle of the stream, given a fact, facts or a stream of facts, returns the next runnables for the workflow and
-    a list of facts produced so far.
-
-  A runnable holds everything necessary for a "reaction" or potential side effect to occur without actually executing the operation.
-
-  Reactions in a workflow are two-phase. Exposing intentions of some action using a `value` fact paired with the work function to apply it to.
-
-  Atomic runnables are a function and an arbitrary term to feed into it.
-
-  Functions can be MFA tuples, or elixir functions using the `&MyModule.my_func/arity` syntax.
-
-  Runnables are compiled into Workflows as Steps (for functions) which produce additional Facts (for terms)
-    that also include ancestral hashes to connect it to a path of execution.
-
-  Any individual atomic runnable executed might return another runnable containing
-    either a workflow (a composite set of steps) or simply a step with the next fact to feed it.
-
-  Layers:
-
-  Workflows & Streams -> Steps & Facts -> Functions & Terms (Atomic)
-
-  Steps and Facts represent the execution in context of it's parent ancestors that produced it.
-
-  Workflows and Streams are composites representing a network of dependent steps and a stream that can be pulled from.
-
-  The purpose of a workflow reaction is to break down the composite runnables into atomic runnables.
-
-  This is done by returning a stream which represents the progress of the workflow as a fact produces more facts.
-
-  This is meant to be an API for a Dagger Runtime implementation so we want the results from enumerating the stream to
-    contain metadata needed to orchestrate the parallellism opportunities available.
+  Appends resulting facts to the log.
   """
-  def react(workflow, facts) when is_list(facts) do
-    # probably need to modify this to return a stream from which
-    Stream.resource(
-      initial_reaction(workflow, facts),
-      fn
-        %{runnables: nil, facts: facts} ->
-          {:halt, facts}
+  def run(%__MODULE__{agenda: agenda} = wrk) do
+    wrk =
+      Enum.reduce(agenda.runnables, wrk, fn {_key, {step, fact}}, wrk ->
+        Activation.activate(step, wrk, fact)
+      end)
 
-        %{runnables: runnables, facts: facts} = acc ->
-          %{runnables: next_runnables, facts: new_facts} =
-            runnables
-            |> Enum.map(&do_react(workflow, &1))
-            |> Enum.reduce(%{facts: [], runnables: []}, fn
-              {fact, runnables}, acc ->
-                %{acc | facts: [fact | acc.facts], runnables: [runnables | acc.runnables]}
-            end)
-
-          next_runnables_or_nil =
-            case Enum.empty?(next_runnables |> List.flatten()) do
-              true -> nil
-              _ -> next_runnables
-            end
-
-          facts_so_far = [new_facts | facts] |> List.flatten()
-
-          {facts_so_far,
-           %{
-             acc
-             | facts: facts_so_far,
-               runnables: next_runnables_or_nil
-           }}
-      end,
-      fn acc -> acc end
-    )
+    %__MODULE__{wrk | agenda: Agenda.next_cycle(wrk.agenda)}
   end
 
-  def react(workflow, fact), do: react(workflow, [fact])
-
-  # common runnable activations always return {fact, next_runnables}
-  def do_react(%__MODULE__{flow: flow}, {%Step{} = step, %Fact{} = fact}) do
-    case Step.run(step, fact) do
-      %Fact{type: :condition, runnable: {ancestor_step, ancestor_fact}, value: true} = fact ->
-        next_runnables =
-          flow
-          |> next_steps(ancestor_step)
-          |> Enum.map(&{&1, %Fact{ancestor_fact | runnable: nil}})
-
-        {fact, next_runnables}
-
-      # conditions that do not return true don't have any child runnables
-      %Fact{type: :condition} = fact ->
-        {fact, nil}
-
-      %Fact{type: :reaction, runnable: {ancestor_step, _ancestor_fact}} = fact ->
-        next_runnables =
-          flow
-          |> next_steps(ancestor_step)
-          |> Enum.map(&{&1, %Fact{fact | runnable: nil}})
-
-        {fact, next_runnables}
-    end
+  @doc """
+  Returns actual side effects of the workflow - i.e. facts resulting from the execution of a step.
+  """
+  def reactions(%__MODULE__{} = wrk) do
+    wrk.facts
+    |> Enum.filter(fn %Fact{} = fact ->
+      fact.value != :satisfied and not is_nil(fact.ancestry)
+    end)
+    |> Enum.map(& &1.value)
   end
 
-  # initial pass through conditions
-  def do_react(%__MODULE__{flow: flow} = workflow, %Fact{} = fact) do
-    flow
-    |> next_steps(:root)
-    |> Enum.map(&{&1, fact})
-    |> Enum.map(&do_react(workflow, &1))
-    |> Enum.reduce(
-      %{runnables: [], facts: []},
-      fn
-        {new_fact, nil}, %{facts: facts} = acc ->
-          %{acc | facts: [new_fact | facts]}
+  @doc """
+  Returns a list of the next {node, fact} i.e "runnable" pairs ready for activation in the next cycle.
 
-        {new_fact, new_runnables}, %{facts: facts} = acc ->
-          %{acc | runnables: new_runnables, facts: [new_fact | facts]}
-      end
-    )
-  end
-
-  defp initial_reaction(workflow, raw_facts) do
-    fn ->
-      facts = Enum.map(raw_facts, &Fact.new(value: &1))
-
-      %{facts: new_facts} =
-        initial_reaction =
-        facts
-        |> Enum.map(&do_react(workflow, &1))
-        |> Enum.reduce(
-          %{facts: [], runnables: []},
-          fn reaction, %{facts: facts, runnables: runnables} = acc ->
-            %{acc | facts: [reaction.facts | facts], runnables: [reaction.runnables | runnables]}
-          end
-        )
-        |> Enum.map(fn {k, v} -> {k, List.flatten(v)} end)
-        |> Map.new()
-
-      %{initial_reaction | facts: [new_facts | facts] |> List.flatten()}
-    end
-  end
+  All Runnables returned are independent and can be run in parallel then fed back into the Workflow
+  without wait or delays to get the same results.
+  """
+  def next_runnables(%__MODULE__{agenda: agenda}), do: Agenda.next_runnables(agenda)
 
   def next_steps(%__MODULE__{flow: flow}, parent_step) do
     next_steps(flow, parent_step)
@@ -623,10 +451,6 @@ defmodule Dagger.Workflow do
     Graph.out_neighbors(flow, parent_step)
   end
 
-  # def combine(%__MODULE__{flow: flow} = parent_workflow, %__MODULE__{flow: child_flow} = child_workflow) do
-
-  # end
-
   @doc """
   Adds a rule to the workflow. A rule's left hand side (condition) is a runnable which should return booleans.
 
@@ -635,46 +459,62 @@ defmodule Dagger.Workflow do
   that do exist and add the reaction step to the sub-conditions.
   """
   def add_rule(
-    %__MODULE__{flow: flow} = workflow,
-    %Rule{condition: condition} = rule
-  ) do
-    # condition_step = Step.of_condition(rule)
-    reaction_step = Step.of_reaction(rule)
+        %__MODULE__{} = workflow,
+        %Rule{} = rule
+      ) do
+    workflow_of_rule = Dagger.Flowable.to_workflow(rule)
+    merge(workflow, workflow_of_rule)
+  end
 
-    # extract atomic conditional checks from expression
-    # build Condition.t() nodes for each atomic pattern function for hashes
-    # build sets of condition hashes for conjuctions
-
+  def with_rule(
+        %__MODULE__{flow: flow} = workflow,
+        %Condition{} = condition,
+        %Step{} = reaction_step
+      ) do
     %__MODULE__{
       workflow
       | flow:
           flow
-          |> Graph.add_vertex(condition, [condition.hash, condition.name])
+          |> Graph.add_vertex(condition, [condition.hash])
           |> Graph.add_vertex(reaction_step, [reaction_step.hash, reaction_step.name])
-          |> Graph.add_edge(root(), condition, label: {:root, condition.hash})
-          |> Graph.add_edge(condition, reaction_step,
-            label: {condition.hash, reaction_step.hash}
-          )
+          |> Graph.add_edge(root(), condition, label: {%Root{}, condition.hash})
+          |> Graph.add_edge(condition, reaction_step, label: {condition.hash, reaction_step.hash})
     }
   end
 
-  def add_rule(workflow, opts) when is_map(opts) or is_list(opts) do
-    add_rule(workflow, Rule.new(opts))
+  @doc """
+  Merges the second workflow into the first maintaining the name of the first.
+  """
+  def merge(%__MODULE__{flow: flow} = workflow, %__MODULE__{flow: flow2}) do
+    %__MODULE__{
+      workflow
+      | flow:
+          flow2
+          |> Graph.out_neighbors(%Root{})
+          |> Enum.reduce(flow, fn v, into_flow ->
+            do_merge(into_flow, flow2, v, %Root{})
+          end)
+    }
   end
 
+  defp do_merge(into_flow, from_flow, steps, parent) when is_list(steps) do
+    Enum.reduce(steps, into_flow, fn step, flow ->
+      do_merge(flow, from_flow, step, parent)
+    end)
+  end
 
-  @doc """
-  Builds a conditional expression.
-  """
-  def condition(expression) do
-    Condition.new(expression)
+  defp do_merge(into_flow, from_flow, step, parent) do
+    into_flow
+    |> Graph.add_vertex(step, [step.hash])
+    |> Graph.add_edge(parent, step, label: {%Root{}, step.hash})
+    |> do_merge(from_flow, next_steps(from_flow, step), step)
   end
 
   @doc """
-  Returns a rule.
+  Adds a step to the root of the workflow that is always evaluated with a new fact.
   """
-  def rule(lhs, rhs, opts \\ []) do
-    Rule.new(Keyword.merge(opts, condition: lhs, reaction: rhs))
+  def add_step(%__MODULE__{} = workflow, %Step{} = child_step) do
+    add_step(workflow, %Root{}, child_step)
   end
 
   @doc """
@@ -686,32 +526,41 @@ defmodule Dagger.Workflow do
 
   If you're just building a pipeline, dependent steps can be sufficient, however you might want Rules for conditional branching logic.
   """
-  def add_step(%__MODULE__{flow: flow} = workflow, :root, %Step{} = child_step) do
+  def add_step(%__MODULE__{flow: flow} = workflow, %Root{}, %Step{} = child_step) do
     %__MODULE__{
       workflow
       | flow:
           flow
           |> Graph.add_vertex(child_step, [child_step.hash, child_step.name])
-          |> Graph.add_edge(:root, child_step, label: {:root, child_step.hash})
+          |> Graph.add_edge(%Root{}, child_step, label: {%Root{}, child_step.hash})
     }
   end
 
-  def add_step(%__MODULE__{flow: flow} = workflow, parent_step_name, %Step{} = child_step) do
+  def add_step(%__MODULE__{flow: flow} = workflow, %Step{} = parent_step, %Step{} = child_step) do
+    %__MODULE__{
+      workflow
+      | flow:
+          flow
+          |> Graph.add_vertex(child_step, [child_step.hash, child_step.name])
+          |> Graph.add_edge(parent_step, child_step, label: {parent_step.hash, child_step.hash})
+    }
+  end
+
+  def add_step(%__MODULE__{} = workflow, parent_step_name, %Step{} = child_step) do
     case get_step_by_name(workflow, parent_step_name) do
       {:ok, parent_step} ->
-        %__MODULE__{
-          workflow
-          | flow:
-              flow
-              |> Graph.add_vertex(child_step, [child_step.hash, child_step.name])
-              |> Graph.add_edge(parent_step, child_step,
-                label: {parent_step.hash, child_step.hash}
-              )
-        }
+        add_step(workflow, parent_step, child_step)
 
       {:error, :step_not_found} ->
         {:error, "A step named #{parent_step_name} was not found"}
     end
+  end
+
+  @doc """
+  Lists all steps in the workflow.
+  """
+  def steps(%__MODULE__{flow: flow}) do
+    Enum.filter(Graph.vertices(flow), &match?(%Step{}, &1))
   end
 
   # def add_workflow(%__MODULE__{flow: flow} = parent_workflow, parent_connector_step_or_hash_or_step_name, %__MODULE__{flow: child_flow} = child_workflow) do
@@ -724,7 +573,7 @@ defmodule Dagger.Workflow do
 
   Returns an error if a step by the name given is not found.
   """
-  def get_step_by_name(_workflow, :root), do: {:ok, :root}
+  def get_step_by_name(_workflow, %Root{}), do: {:ok, %Root{}}
 
   def get_step_by_name(%__MODULE__{flow: flow}, step_name) do
     case flow
@@ -734,7 +583,7 @@ defmodule Dagger.Workflow do
            {:error, :step_not_found},
            fn
              %Step{name: name} -> step_name == name
-             :root -> false
+             %Root{} -> false
            end
          ) do
       {:error, _} = error -> error
@@ -758,8 +607,6 @@ defmodule Dagger.Workflow do
       add_rule(workflow, reactor)
     end)
   end
-
-
 
   # defp workflow_hash(%__MODULE__{flow: flow} = workflow) do
 

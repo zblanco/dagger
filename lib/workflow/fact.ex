@@ -20,7 +20,7 @@ defmodule Dagger.Workflow.Fact do
     |> maybe_set_hash()
   end
 
-  defp maybe_set_hash(%__MODULE__{value: value, hash: nil} = fact) when not is_nil(value) do
+  defp maybe_set_hash(%__MODULE__{value: value, hash: nil} = fact) do
     %__MODULE__{fact | hash: Steps.fact_hash(value)}
   end
 

@@ -1,12 +1,13 @@
 defmodule Dagger.Workflow.Steps do
-  @moduledoc """
-  Common helpers for working with steps of any kind.
-  """
+  @doc false
 
   def work_hash({m, f}),
-    do: :erlang.phash2(:erlang.term_to_binary(Function.capture(m, f, 1)))
+    do: work_hash({m, f, 1})
 
-  def work_hash(work) when is_function(work, 1),
+  def work_hash({m, f, a}),
+    do: :erlang.phash2(:erlang.term_to_binary(Function.capture(m, f, a)))
+
+  def work_hash(work) when is_function(work),
     do: :erlang.phash2(:erlang.term_to_binary(work))
 
   def fact_hash(value), do: :erlang.phash2(value)

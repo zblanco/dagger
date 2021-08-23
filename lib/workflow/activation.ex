@@ -11,15 +11,17 @@ defprotocol Dagger.Workflow.Activation do
 
   The activation protocol invokes the runnable protocol to evaluate valid steps in that cycle starting with conditionals.
   """
-  def activate(workflow, node, fact)
+  def activate(node, workflow, fact)
 end
 
-defimpl Dagger.Workflow.Activation, for: :root do
-  def activate(workflow, :root, fact) do
+defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Root do
+  alias Dagger.Workflow.Root
+
+  def activate(%Root{} = root, workflow, fact) do
     next_runnables =
       workflow
-      |> Dagger.Workflow.next_steps(:root)
-      |> Enum.map(&Runnable.to_runnable(&1, fact))
+      |> Dagger.Workflow.next_steps(root)
+      |> Enum.map(&{&1, fact})
 
     workflow
     |> Dagger.Workflow.log_fact(fact)
@@ -29,52 +31,74 @@ end
 
 defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Condition do
   alias Dagger.Workflow
+
   alias Dagger.Workflow.{
     Fact,
     Condition,
-    Runnable,
-    Step,
     Steps
   }
 
-  @spec activate(Dagger.Workflow.t(), Dagger.Workflow.Condition.t(), Dagger.Workflow.Fact.t()) ::
+  @spec activate(Dagger.Workflow.Condition.t(), Dagger.Workflow.t(), Dagger.Workflow.Fact.t()) ::
           Dagger.Workflow.t()
   def activate(
-        %Workflow{} = workflow,
         %Condition{} = condition,
+        %Workflow{} = workflow,
         %Fact{} = fact
       ) do
-    with runnable_condition <- Runnable.to_runnable(condition, fact),
-         true               <- Runnable.run(runnable_condition)
-    do
+    with true <- Steps.run(condition.work, fact.value) do
       satisfied_fact = satisfied_fact(condition, fact)
-      children_steps = Workflow.next_steps(workflow, condition)
+
       next_runnables =
-        children_steps
-        |> Enum.filter(&match?(%Step{}, &1))
-        |> Enum.map(&Runnable.to_runnable(&1, fact))
+        workflow
+        |> Workflow.next_steps(condition)
+        |> Enum.map(&{&1, fact})
 
       workflow
       |> Workflow.log_fact(satisfied_fact)
       |> Workflow.add_to_agenda(next_runnables)
+      |> Workflow.prune_activated_runnable(condition, fact)
     else
-      false -> workflow
+      _anything_otherwise ->
+        Workflow.prune_activated_runnable(workflow, condition, fact)
     end
   end
 
-  # defp maybe_activate_joins(workflow, %Fact{value: satisfied})
-
   defp satisfied_fact(%Condition{} = condition, %Fact{} = fact) do
-    condition =
-      unless is_nil(condition.runnable) do
-        # to ensure nested runnables in facts don't accumulate indefinitely
-        Map.delete(condition, :runnable)
-      end
-
     Fact.new(
       value: :satisfied,
       ancestry: {condition.hash, fact.hash},
       runnable: {condition, fact}
     )
+  end
+end
+
+defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Step do
+  alias Dagger.Workflow
+
+  alias Dagger.Workflow.{
+    Fact,
+    Step,
+    Steps
+  }
+
+  def activate(
+        %Step{} = step,
+        %Workflow{} = workflow,
+        %Fact{} = fact
+      ) do
+    result = Steps.run(step.work, fact.value)
+
+    result_fact =
+      Fact.new(value: result, ancestry: {step.hash, fact.hash}, runnable: {step, fact})
+
+    next_runnables =
+      workflow
+      |> Workflow.next_steps(step)
+      |> Enum.map(&{&1, result_fact})
+
+    workflow
+    |> Workflow.log_fact(result_fact)
+    |> Workflow.add_to_agenda(next_runnables)
+    |> Workflow.prune_activated_runnable(step, fact)
   end
 end

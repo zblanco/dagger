@@ -51,41 +51,27 @@ defmodule Dagger.Workflow.Step do
   * an actionable pair of a function and the data to execute it with. (name suits this better)
   * A model that can be fed facts and produce reactions
   """
-  alias Dagger.Workflow.{Rule, Step, Fact, Steps}
-
-  @type type() ::
-    :reaction
-    | :condition
-    | :accumulation
+  alias Dagger.Workflow.{Step, Fact, Steps}
 
   defstruct name: nil,
             work: nil,
-            type: :reaction,
             hash: nil
 
   def new(params) do
     struct!(__MODULE__, params)
     |> hash_work()
+    |> maybe_set_name()
   end
+
+  defp maybe_set_name(%__MODULE__{name: nil, hash: hash} = step),
+    do: %__MODULE__{step | name: to_string(hash)}
+
+  defp maybe_set_name(%__MODULE__{name: name} = step) when not is_nil(name), do: step
 
   defp hash_work(%Step{work: work} = step), do: Map.put(step, :hash, Steps.work_hash(work))
 
-  def of_condition(%Rule{} = rule) do
-    %__MODULE__{
-      name: rule.name,
-      work: rule.condition,
-      type: :condition,
-      # hash: work_hash(rule.condition),
-    }
-  end
-
-  def of_reaction(%Rule{} = rule) do
-    %__MODULE__{
-      name: rule.name,
-      work: rule.reaction,
-      type: :reaction,
-      # hash: work_hash(rule.reaction),
-    }
+  def run(%__MODULE__{} = step, input) when not is_struct(input, Fact) do
+    Steps.run(step.work, input)
   end
 
   # todo: inject hashing method as dependency

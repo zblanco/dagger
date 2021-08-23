@@ -12,19 +12,31 @@ defmodule Dagger.Workflow.Agenda do
   """
   # consider using a PriorityQueue
   @type t() :: %__MODULE__{
-    runnables: list(),
-    generation: pos_integer(),
-  }
-  defstruct runnables: [],
-            generation: 0
+          runnables: map(),
+          cycles: pos_integer()
+        }
+  defstruct runnables: %{},
+            cycles: 0
 
-  def new, do: struct(__MODULE__, runnables: [], generation: 0)
+  def new, do: struct(__MODULE__, runnables: %{}, cycles: 0)
 
-  def next_generation(%__MODULE__{generation: g} = agenda) do
-    %__MODULE__{agenda | generation: g + 1, runnables: []}
+  def next_cycle(%__MODULE__{cycles: c} = agenda) do
+    %__MODULE__{agenda | cycles: c + 1}
   end
 
-  def add_runnable(%__MODULE__{runnables: runnables} = agenda, {_step, _fact} = runnable) do
-    %__MODULE__{agenda | runnables: [runnable | runnables]}
+  def add_runnable(%__MODULE__{runnables: runnables} = agenda, {node, fact} = runnable) do
+    %__MODULE__{agenda | runnables: Map.put_new(runnables, {node.hash, fact.hash}, runnable)}
+  end
+
+  def prune_runnable(%__MODULE__{runnables: runnables} = agenda, node, fact) do
+    %__MODULE__{agenda | runnables: Map.delete(runnables, runnable_key(node, fact))}
+  end
+
+  def next_runnables(%__MODULE__{runnables: runnables}), do: Map.values(runnables)
+
+  defp runnable_key(node, fact), do: {node.hash, fact.hash}
+
+  def any_runnables_for_next_cycle?(%__MODULE__{runnables: runnables}) do
+    not Enum.empty?(runnables)
   end
 end

@@ -1,110 +1,192 @@
-# defmodule DaggerTest do
-#   use ExUnit.Case
-#   alias Dagger.Step
-#   alias Dagger.TestRunner
+defmodule DaggerTest do
+  use ExUnit.Case
+  alias Dagger.Workflow.Step
+  alias Dagger.Workflow.Rule
+  alias Dagger.Workflow
+  require Dagger
+  import CompileTimeAssertions
 
-#   describe "new/1" do
-#     test "we can create a step with a map of params" do
-#       step = Step.new(%{name: "test_step", work: &TestRunner.squareaplier/1})
+  defmodule Examples do
+    def is_potato?(:potato), do: true
+    def is_potato?("potato"), do: true
 
-#       assert match?(%Step{}, step)
-#     end
+    def new_potato(), do: :potato
+    def new_potato(_), do: :potato
 
-#     test "we can create a step with a keyword list of params" do
-#       step = Step.new(name: "test_step", work: &TestRunner.squareaplier/1)
+    def potato_baker(:potato), do: :baked_potato
+    def potato_baker("potato"), do: :baked_potato
 
-#       assert match?(%Step{}, step)
-#     end
+    def potato_transformer(_), do: :potato
+  end
 
-#     test "without required params a step isn't runnable" do
-#       step = Step.new(name: "test_step", work: &TestRunner.squareaplier/1)
+  describe "Dagger.rule/2 macro" do
+    test "creates rules using anonymous functions" do
+      rule1 = Dagger.rule(fn :potato -> "potato!" end, name: "rule1")
+      rule2 = Dagger.rule(fn "potato" -> "potato!" end, name: "rule1")
+      rule3 = Dagger.rule(fn :tomato -> "tomato!" end, name: "rule1")
 
-#       assert Step.can_run?(step) == :error
-#     end
-#   end
+      rule4 =
+        Dagger.rule(fn item when is_integer(item) and item > 41 and item < 43 -> "fourty two" end,
+          name: "rule1"
+        )
 
-#   describe "evaluate_runnability/1" do
-#     test "a valid step has a name, work, input, no result, a run_id, and a runner" do
-#       step = Step.new(
-#         name: "test_step",
-#         work: &TestRunner.squareaplier/1,
-#         input: 2,
-#         runner: TestRunner
-#       )
-#       |> Step.assign_run_id()
+      rule5 =
+        Dagger.rule(
+          fn item when is_integer(item) and item > 41 and item < 43 ->
+            result = Enum.random(1..10)
+            result
+          end,
+          name: "rule1"
+        )
 
-#       assert Step.can_run?(step) == :ok
-#     end
+      rules = [rule1, rule2, rule3, rule4, rule5]
 
-#     test "setting the last required value will make a step runnable" do
-#       invalid_step = Step.new(
-#         name: "test_step",
-#         work: &TestRunner.squareaplier/1,
-#         runner: TestRunner
-#       )
-#       |> Step.evaluate_runnability()
-#       |> Step.assign_run_id()
+      Enum.each(rules, &assert(match?(%Rule{}, &1)))
+    end
 
-#       assert Step.can_run?(invalid_step) == :error
+    test "created rules can be evaluated" do
+      some_rule =
+        Dagger.rule(fn item when is_integer(item) and item > 41 and item < 43 -> "fourty two" end,
+          name: "rule1"
+        )
 
-#       valid_step = Step.set_input(invalid_step, 2)
-#       assert Step.can_run?(valid_step) == :ok
-#     end
-#   end
+      assert Rule.check(some_rule, 42)
+      refute Rule.check(some_rule, 45)
+      assert Rule.run(some_rule, 42) == "fourty two"
+    end
 
-#   describe "add_step/2" do
-#     test "we can add a dependent step to a parent" do
-#       parent_step = Step.new(
-#         name: "parent_test_step",
-#         work: &TestRunner.squareaplier/1,
-#         input: 2,
-#         runner: TestRunner
-#       ) |> Step.evaluate_runnability()
+    test "an anonymous function rule with multiple clauses is also valid" do
+      rule = Dagger.rule(
+        fn
+          :potato -> "potato!"
+          :tomato -> "tomato!"
+        end,
+        name: "rule1"
+      ) |> IO.inspect(label: "anonymous function rule")
 
-#       child_step = Step.new(
-#         name: "child_test_step",
-#         work: &TestRunner.squareaplier/1,
-#         input: nil,
-#         runner: TestRunner
-#       ) |> Step.evaluate_runnability()
+      assert match?(%Rule{}, rule)
+      assert Rule.check(rule, :potato) == true
+      assert Rule.check(rule, :tomato) == true
+      assert Rule.run(rule, :potato) == "potato!"
+      assert Rule.run(rule, :tomato) == "tomato!"
+    end
 
-#       parent_with_dependent_step = Step.add_step(parent_step, child_step)
+    test "a valid rule can be created from a named function with multiple clauses" do
+      rule = Dagger.rule(&Examples.potato_baker/1, name: "rule1") |> IO.inspect(label: "named function rule")
 
-#       assert match?(parent_with_dependent_step, %Step{steps: %{child_step.name => child_step}})
-#     end
-#   end
+      assert match?(%Rule{}, rule)
+      assert Rule.check(rule, :potato) == true
+      assert Rule.check(rule, "potato") == true
+      assert Rule.run(rule, :potato) == :baked_potato
+      assert Rule.run(rule, "potato") == :baked_potato
+    end
 
-#   describe "run/1" do
-#     test "if the step isn't runnable, we return an error" do
-#       invalid_step = Step.new(
-#         name: "test_step",
-#         work: &TestRunner.squareaplier/1,
-#         runner: TestRunner
-#       )
+    # test "returns an argument error when multiple clauses are provided" do
+    #   assert_compile_time_raise(
+    #     ArgumentError,
+    #     "Defining a rule with an anonymous function must have only 1 clause.",
+    #     fn ->
+    #       require Dagger
 
-#       assert match?({:error, "step not runnable"}, Step.run(invalid_step))
-#     end
+    #       Dagger.rule(
+    #         fn
+    #           :potato -> "potato!"
+    #           :tomato -> "tomato!"
+    #         end,
+    #         name: "rule1"
+    #       )
+    #     end
+    #   )
+    # end
+  end
 
-#     test "a runnable step runs the work and puts the return into the result" do
-#       step = Step.new(
-#         name: "test_step",
-#         work: &TestRunner.squareaplier/1,
-#         input: 2,
-#         runner: TestRunner
-#       )
-#       |> Step.assign_run_id()
+  describe "Dagger.step constructors" do
+    test "a Step can be created with params using Dagger.step/1" do
+      assert match?(%Step{}, Dagger.step(work: fn -> :potato end, name: "potato"))
+    end
 
-#       {:ok, ran_step} = Step.run(step)
+    test "a Step can be created with params using Dagger.step/2" do
+      assert match?(%Step{}, Dagger.step(fn -> :potato end, name: "potato"))
+      assert match?(%Step{}, Dagger.step(fn _ -> :potato end, name: "potato"))
 
-#       assert match?(%Step{result: 4}, ran_step)
-#     end
+      assert match?(
+               %Step{},
+               Dagger.step(fn something -> something * something end, name: "squarifier")
+             )
 
-#     test "dependent steps are evaluated when parent is ran" do
-#       assert false
-#     end
+      assert match?(%Step{}, Dagger.step(&Examples.potato_baker/1, name: "potato_baker"))
+      assert match?(%Step{}, Dagger.step(&Examples.potato_transformer/1, name: "potato_baker"))
+      assert match?(%Step{}, Dagger.step(&Examples.potato_baker/1))
+      assert match?(%Step{}, Dagger.step(&Examples.potato_transformer/1))
+    end
 
-#     test "dependent steps are dispatched with the result of the parent step" do
-#       # modify the test queue to hold state
-#     end
-#   end
-# end
+    test "a Step can be run for localized testing" do
+      squarifier_step = Dagger.step(fn something -> something * something end, name: "squarifier")
+
+      assert 4 == Dagger.Workflow.Step.run(squarifier_step, 2)
+    end
+  end
+
+  describe "Dagger.workflow/1 constructor" do
+    test "constructs an operable %Workflow{} given a set of steps" do
+      steps_to_add = [
+        Dagger.step(fn something -> something * something end, name: "squarifier"),
+        Dagger.step(fn something -> something * 2 end, name: "doubler"),
+        Dagger.step(fn something -> something * -1 end, name: "negator")
+      ]
+
+      workflow =
+        Dagger.workflow(
+          name: "a test workflow",
+          steps: steps_to_add
+        )
+
+      assert match?(%Workflow{}, workflow)
+
+      steps = Dagger.Workflow.steps(workflow)
+
+      assert Enum.any?(steps, &Enum.member?(steps_to_add, &1))
+    end
+
+    test "constructs an operable %Workflow{} given a tree of dependent steps" do
+      workflow =
+        Dagger.workflow(
+          name: "a test workflow with dependent steps",
+          steps: [
+            {Dagger.step(fn x -> x * x end, name: "squarifier"),
+             [
+               Dagger.step(fn x -> x * -1 end, name: "negator"),
+               Dagger.step(fn x -> x * 2 end, name: "doubler")
+             ]},
+            {Dagger.step(fn x -> x * 2 end, name: "doubler"),
+             [
+               {Dagger.step(fn x -> x * 2 end, name: "doubler"),
+                [
+                  Dagger.step(fn x -> x * 2 end, name: "doubler"),
+                  Dagger.step(fn x -> x * -1 end, name: "negator")
+                ]}
+             ]}
+          ]
+        )
+
+      assert match?(%Workflow{}, workflow)
+    end
+
+    test "constructs an operable %Workflow{} given a set of rules" do
+      workflow =
+        Dagger.workflow(
+          name: "a test workflow",
+          rules: [
+            Dagger.rule(fn :foo -> :bar end, name: "foobar"),
+            Dagger.rule(fn :potato -> :tomato end, name: "tomato when potato"),
+            Dagger.rule(
+              fn item when is_integer(item) and item > 41 and item < 43 ->
+                "the answer to life the universe and everything"
+              end,
+              name: "what about the question?"
+            )
+          ]
+        )
+    end
+  end
+end

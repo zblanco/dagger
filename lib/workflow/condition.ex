@@ -28,9 +28,7 @@ defmodule Dagger.Workflow.Condition do
   """
   alias Dagger.Workflow.{
     Steps,
-    Step,
-    Rule,
-    Fact
+    Step
   }
 
   defstruct work: nil,
@@ -46,25 +44,10 @@ defmodule Dagger.Workflow.Condition do
   """
   @type runnable() :: function() | mfa() | %Step{} | any()
 
-  # @spec of_rule(Dagger.Workflow.Rule.t()) :: Dagger.Workflow.Condition.t()
-  # def of_rule(%Rule{condition: condition} = _rule) do
-  #   %__MODULE__{
-  #     work: condition,
-  #     hash: Steps.work_hash(condition)
-  #   }
-  # end
-
   def new(work) when is_function(work, 1) do
     %__MODULE__{
       work: work,
       hash: Steps.work_hash(work)
     }
-  end
-
-  def new(work) do
-    # string / boolean expressions?
-    # type assertions?
-    # nested conditions?
-    # joined by AND / OR?
   end
 end
