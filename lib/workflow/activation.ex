@@ -45,7 +45,9 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Condition do
         %Workflow{} = workflow,
         %Fact{} = fact
       ) do
-    with true <- Steps.run(condition.work, fact.value) do
+    IO.inspect(condition)
+    IO.inspect(fact)
+    with true <- try_to_run_work(condition.work, fact.value, condition.arity) do
       satisfied_fact = satisfied_fact(condition, fact)
 
       next_runnables =
@@ -61,6 +63,30 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Condition do
       _anything_otherwise ->
         Workflow.prune_activated_runnable(workflow, condition, fact)
     end
+  end
+
+  def try_to_run_work(work, fact_value, arity) do
+    try do
+      run_work(work, fact_value, arity)
+    rescue
+      _anything -> false
+    end
+  end
+
+  defp run_work(work, fact_value, 1) when is_list(fact_value) do
+    apply(work, fact_value)
+  end
+
+  defp run_work(work, fact_value, arity) when arity > 1 and is_list(fact_value) do
+    Steps.run(work, fact_value)
+  end
+
+  defp run_work(_work, _fact_value, arity) when arity > 1 do
+    false
+  end
+
+  defp run_work(work, fact_value, _arity) do
+    Steps.run(work, fact_value)
   end
 
   defp satisfied_fact(%Condition{} = condition, %Fact{} = fact) do

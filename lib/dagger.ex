@@ -51,7 +51,6 @@ defmodule Dagger do
     Rule
   }
 
-
   @doc """
   Defines a rule with specific key value params.
   """
@@ -67,13 +66,17 @@ defmodule Dagger do
 
     expression = [{condition, reaction}]
 
+    arity = Steps.arity_of(reaction)
+
     quote bind_quoted: [
             expression: expression,
             description: description,
+            arity: arity,
             rule_name: rule_name
           ] do
       Kernel.struct!(Dagger.Workflow.Rule,
         name: to_string(rule_name),
+        arity: arity,
         expression: expression,
         description: description
       )
@@ -89,16 +92,21 @@ defmodule Dagger do
     rule_name = Keyword.get(opts, :name) || raise ArgumentError, "Defining a rule requires a name"
     description = Keyword.get(opts, :description)
 
-    expressions =
-      Enum.map(clauses, &expression_of_clauses/1) |> IO.inspect(label: "expressions")
+    IO.inspect(clauses, label: "clauses")
+    IO.inspect(opts, label: "opts")
+
+    arity = Steps.arity_of(clauses) |> IO.inspect(label: "arity of anonymous function rule")
+    expressions = Enum.map(clauses, &expression_of_clauses/1) |> IO.inspect(label: "expressions")
 
     quote bind_quoted: [
             expressions: Macro.escape(expressions),
+            arity: arity,
             description: description,
             rule_name: rule_name
           ] do
       Kernel.struct!(Dagger.Workflow.Rule,
         name: to_string(rule_name),
+        arity: arity,
         expression: expressions,
         description: description
       )
@@ -120,7 +128,7 @@ defmodule Dagger do
                  [
                    {{:., _dot_meta, [{:__aliases__, aliasing_opts, aliases}, function_name]},
                     _dot_opts, _dot_etc}
-                   | [_arity]
+                   | [arity]
                  ]}
               ]} = _captured_function,
              opts
@@ -163,12 +171,14 @@ defmodule Dagger do
       quote bind_quoted: [
               expression: Macro.escape(expression),
               description: description,
+              arity: arity,
               rule_name: rule_name
             ] do
         Kernel.struct!(Dagger.Workflow.Rule,
           name: to_string(rule_name),
           expression: expression,
-          description: description
+          description: description,
+          arity: arity
         )
       end
     end
@@ -191,18 +201,13 @@ defmodule Dagger do
     {&Steps.always_true/1, rhs}
   end
 
-  defp expression_of_clauses(
-         clauses
-       ) when is_list(clauses) do
-
+  defp expression_of_clauses(clauses) when is_list(clauses) do
     clauses
     |> Enum.map(&expression_of_clauses/1)
     |> List.flatten()
   end
 
-  defp expression_of_clauses(
-         {:def, _meta, [{_function_name, _clause_meta, lhs}, [do: rhs]]}
-       ) do
+  defp expression_of_clauses({:def, _meta, [{_function_name, _clause_meta, lhs}, [do: rhs]]}) do
     IO.inspect(lhs, label: "lhs named")
     IO.inspect(rhs, label: "rhs named")
     {lhs, rhs}
@@ -235,6 +240,16 @@ defmodule Dagger do
     |> add_steps(steps)
     |> add_rules(rules)
   end
+
+  # def accumulator(opts \\ []) do
+  #   name = Keyword.get(opts, :name) || raise ArgumentError, "Defining an accumulator requires a name"
+  #   init = Keyword.get(opts, :init) || raise ArgumentError, "Defining an accumulator requires an initiator"
+  #   reducers = Keyword.get(opts, :reducers) || raise ArgumentError, "Defining an accumulator requires a list of reducers"
+
+  # end
+
+  # defp init_rule(%Rule{} = init, _acc_name), do: init
+  # defp init_rule(init, acc_name), do: Dagger.rule(init, name: "#{acc_name}-init")
 
   defp add_steps(workflow, nil), do: workflow
 
@@ -291,4 +306,16 @@ defmodule Dagger do
   def step({m, f, a} = work, opts) when is_atom(m) and is_atom(f) and is_integer(a) do
     Step.new(Keyword.merge([work: work], opts))
   end
+
+  # def next_runnables(flowable) do
+
+  # end
+
+  # def next_runnables(%Workflow{} = workflow, %Fact{} = input) do
+  #   Workflow.next_runnables(workflow, input)
+  # end
+
+  # def next_runnables(runnable, input) do
+  #   Dagger.Flowable.to_workflow()
+  # end
 end

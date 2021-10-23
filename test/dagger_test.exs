@@ -2,6 +2,7 @@ defmodule DaggerTest do
   use ExUnit.Case
   alias Dagger.Workflow.Step
   alias Dagger.Workflow.Rule
+  alias Dagger.Workflow.Accumulator
   alias Dagger.Workflow
   require Dagger
   import CompileTimeAssertions
@@ -17,6 +18,9 @@ defmodule DaggerTest do
     def potato_baker("potato"), do: :baked_potato
 
     def potato_transformer(_), do: :potato
+
+    def potato_masher(:potato, :potato), do: :mashed_potato
+    def potato_masher("potato", "potato"), do: :mashed_potato
   end
 
   describe "Dagger.rule/2 macro" do
@@ -56,13 +60,24 @@ defmodule DaggerTest do
     end
 
     test "an anonymous function rule with multiple clauses is also valid" do
-      rule = Dagger.rule(
-        fn
-          :potato -> "potato!"
-          :tomato -> "tomato!"
-        end,
-        name: "rule1"
-      ) |> IO.inspect(label: "anonymous function rule")
+      rule =
+        Dagger.rule(
+          fn
+            :potato -> "potato!"
+            :tomato -> "tomato!"
+          end,
+          name: "rule1"
+        )
+        |> IO.inspect(label: "anonymous function rule")
+
+      wrk = Dagger.Flowable.to_workflow(rule) |> IO.inspect()
+
+      assert Enum.all?(
+               wrk
+               |> Workflow.steps()
+               |> Enum.reject(&match?(%Dagger.Workflow.Step{}, &1)),
+               &(&1.arity == 1)
+             )
 
       assert match?(%Rule{}, rule)
       assert Rule.check(rule, :potato) == true
@@ -72,13 +87,58 @@ defmodule DaggerTest do
     end
 
     test "a valid rule can be created from a named function with multiple clauses" do
-      rule = Dagger.rule(&Examples.potato_baker/1, name: "rule1") |> IO.inspect(label: "named function rule")
+      rule =
+        Dagger.rule(&Examples.potato_baker/1, name: "rule1")
+        |> IO.inspect(label: "named function rule")
 
       assert match?(%Rule{}, rule)
       assert Rule.check(rule, :potato) == true
       assert Rule.check(rule, "potato") == true
       assert Rule.run(rule, :potato) == :baked_potato
       assert Rule.run(rule, "potato") == :baked_potato
+    end
+
+    test "a valid rule can be created from functions an arity > 1" do
+      rule =
+        Dagger.rule(
+          fn num, other_num when is_integer(num) and is_integer(other_num) -> num * other_num end,
+          name: "multiplier"
+        )
+
+      assert match?(%Rule{}, rule)
+      # if we want this to return false - should we store context of a rule's arity?
+      assert Rule.check(rule, :potato) == false
+      assert Rule.check(rule, 10) == false
+      assert Rule.check(rule, 1) == false
+      assert Rule.check(rule, [1, 2]) == true
+      assert Rule.check(rule, [:potato, "tomato"]) == false
+      assert Rule.run(rule, [10, 2]) == 20
+      assert Rule.run(rule, [2, 90]) == 180
+    end
+
+    test "a valid rule can be created from functions an arity > 1 and many clauses" do
+      rule_with_many_clauses =
+        Dagger.rule(
+          fn
+            fee, fi, fo when is_integer(fee) and is_integer(fi) and is_integer(fo) ->
+              :all_integers
+
+            fee, fi, fo when is_binary(fee) and is_binary(fi) and is_binary(fo) ->
+              :all_binaries
+          end,
+          name: "all-int-or-all-binary?"
+        )
+
+      assert match?(%Rule{}, rule_with_many_clauses)
+      assert Rule.check(rule_with_many_clauses, :potato) == false
+      assert Rule.check(rule_with_many_clauses, 10) == false
+      assert Rule.check(rule_with_many_clauses, [1, 2, 3]) == true
+      assert Rule.check(rule_with_many_clauses, [1, 2, 3, 4]) == false
+      assert Rule.check(rule_with_many_clauses, [1, 2, "3"]) == false
+      assert Rule.check(rule_with_many_clauses, ["1", "2", "3"]) == true
+
+      assert Rule.run(rule_with_many_clauses, [1, 2, 3]) == :all_integers
+      assert Rule.run(rule_with_many_clauses, ["1", "2", "3"]) == :all_binaries
     end
 
     # test "returns an argument error when multiple clauses are provided" do
@@ -187,6 +247,28 @@ defmodule DaggerTest do
             )
           ]
         )
+
+      assert match?(%Workflow{}, workflow)
+    end
+  end
+
+  describe "Dagger.accumulator/1 constructor" do
+    test "constructs a Flowable %Accumulator{} given a name, init, and reducers" do
+      accumulator =
+        Dagger.accumulator(
+          name: "adds integers to its state up until 30 then stops",
+          init: 0,
+          reducers: [
+            fn num, state when is_integer(num) and state >= 0 and state < 10 -> state + num end,
+            fn num, state when is_integer(num) and state >= 10 and state < 20 -> state + num end,
+            fn num, state when is_integer(num) and state >= 20 and state < 30 -> state + num end,
+            fn _num, state -> state end
+          ]
+        )
+
+      assert match?(%Accumulator{}, accumulator)
+
+      assert match?(%Workflow{}, Dagger.Flowable.to_workflow(accumulator))
     end
   end
 end

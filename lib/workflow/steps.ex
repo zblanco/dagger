@@ -15,11 +15,36 @@ defmodule Dagger.Workflow.Steps do
   def join_hash(left, right),
     do: :erlang.phash2(:erlang.term_to_binary({left, right}))
 
+  def run({m, f}, [] = fact_value), do: apply(m, f, fact_value)
   def run({m, f}, fact_value), do: apply(m, f, [fact_value])
 
-  def run(work, fact_value) when is_function(work), do: work.(fact_value)
+  def run(work, fact_value) when is_function(work), do: apply(work, [fact_value])
 
   def next_steps(flow, parent_step), do: Graph.out_neighbors(flow, parent_step)
+
+  def arity_of(fun) when is_function(fun), do: Function.info(fun, :arity) |> elem(1)
+
+  def arity_of([
+        {:->, _meta, [[{:when, _when_meta, lhs_expression}] | _rhs]} | _
+      ]) do
+    lhs_expression
+    |> Enum.reject(&(not match?({_arg_name, _meta, nil}, &1)))
+    |> length()
+  end
+
+  def arity_of([{:->, _meta, [lhs | _rhs]} | _]), do: arity_of(lhs)
+
+  def arity_of(args) when is_list(args), do: length(args)
+
+  def arity_of(_term), do: 1
+
+  def is_of_arity?(arity) do
+    fn
+      args when is_list(args) ->
+        if(arity == 1, do: true, else: false)
+      args -> arity_of(args) == arity
+    end
+  end
 
   def always_true(_anything), do: true
 

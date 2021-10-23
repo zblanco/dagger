@@ -32,11 +32,13 @@ defmodule Dagger.Workflow.Condition do
   }
 
   defstruct work: nil,
-            hash: nil
+            hash: nil,
+            arity: nil
 
   @type t() :: %__MODULE__{
           work: runnable(),
-          hash: integer()
+          hash: integer(),
+          arity: arity(),
         }
 
   @doc """
@@ -44,10 +46,19 @@ defmodule Dagger.Workflow.Condition do
   """
   @type runnable() :: function() | mfa() | %Step{} | any()
 
-  def new(work) when is_function(work, 1) do
+  def new(work) when is_function(work) do
     %__MODULE__{
       work: work,
-      hash: Steps.work_hash(work)
+      hash: Steps.work_hash(work),
+      arity: Function.info(work, :arity) |> elem(1)
+    }
+  end
+
+  def new(work, arity) when is_function(work) do
+    %__MODULE__{
+      work: work,
+      hash: Steps.work_hash(work),
+      arity: arity,
     }
   end
 end

@@ -21,6 +21,7 @@ defmodule Dagger.Workflow.Rule do
 
   defstruct name: nil,
             description: nil,
+            arity: nil,
             condition: nil,
             reaction: nil,
             expression: []
@@ -31,6 +32,7 @@ defmodule Dagger.Workflow.Rule do
   @type t() :: %__MODULE__{
           name: String.t(),
           description: String.t(),
+          arity: arity(),
           condition: any(),
           reaction: any(),
           expression: [{lhs(), rhs()}]
@@ -52,99 +54,23 @@ defmodule Dagger.Workflow.Rule do
   """
   @type rhs() :: any()
 
-  # def new(fun) when is_function(fun, 0) do
-  #   Rule.new(condition: fn _ -> true end, reaction: fun)
-  # end
-
-  # def new(fun) when is_function(fun, 1) do
-  #   Rule.new(condition: fn _ -> true end, reaction: fun)
-  # end
-
-  # def new(params) do
-  #   struct(__MODULE__, params)
-  #   |> prepare_lhs()
-  #   |> prepare_rhs()
-  # end
-
-  # def check(%__MODULE__{} = rule, input) do
-  #   rule
-  #   |> Runnable.to_workflow()
-  #   |> IO.inspect(label: workflow)
-  #   |> Workflow.next_runnables?(input)
-  # end
-
-  # def check(%__MODULE__{} = rule, input) do
-  #   # left_hand_sides = Enum.map(rule.expression, &elem(&1, 0))
-  #   # true_branches = for clause <- left_hand_sides, do: {:->, [], [[clause], true]}
-  #   false_branch = {:->, [], [[{:_, [], Elixir}], false]}
-
-  #   branches =
-  #     [false_branch | Enum.map(rule.expression, &check_branch_of_expression/1)]
-  #     |> Enum.reverse()
-
-  #   check = {:fn, [], branches}
-
-  #   IO.inspect(Macro.to_string(check), label: "check")
-  #   {fun, _} = Code.eval_quoted(check)
-  #   fun.(input)
-  # end
-
-  # defp check_branch_of_expression({lhs, _rhs}) when is_function(lhs) do
-  #   wrapper =
-  #     quote bind_quoted: [lhs: lhs] do
-  #       fn input ->
-  #         try do
-  #           IO.inspect(apply(lhs, input), label: "application")
-  #         rescue
-  #           true -> true
-  #           otherwise ->
-  #             IO.inspect(otherwise, label: "otherwise")
-  #             false
-  #         end
-  #       end
-  #     end
-
-  #   IO.inspect(Macro.to_string(wrapper), label: "wrapper")
-
-  #   {:->, [], [[:_], wrapper]}
-  # end
-
-  # defp check_branch_of_expression({lhs, _rhs}), do: {:->, [], [[lhs], true]}
-
-  # def run(%__MODULE__{} = rule, input) do
-  #   action_branches =
-  #     Enum.map(rule.expression, fn
-  #       {lhs, rhs} when is_function(lhs) ->
-  #         wrapper = quote(do: fn input -> apply(lhs, input) end)
-
-  #         IO.inspect(Macro.to_string(wrapper), label: "wrapper")
-
-  #         {:->, [], [[:_], rhs]}
-
-  #       {lhs, rhs} ->
-  #         {:->, [], [[lhs], rhs]}
-  #     end)
-
-  #   false_branch = {:->, [], [[{:_, [], Elixir}], false]}
-  #   branches = [false_branch | action_branches] |> Enum.reverse()
-
-  #   {fun, _} = Code.eval_quoted({:fn, [], branches})
-  #   fun.(input)
-  # end
 
   def check(%__MODULE__{} = rule, input) do
     Dagger.Flowable.to_workflow(rule)
-    |> Workflow.plan(input)
+    |> Workflow.plan_eagerly(input)
     |> Workflow.is_runnable?()
   end
 
   def run(%__MODULE__{} = rule, input) do
     Dagger.Flowable.to_workflow(rule)
-    |> Workflow.plan(input)
+    |> Workflow.plan_eagerly(input)
     |> Workflow.next_runnables()
     |> Enum.map(fn {step, fact} -> Dagger.Runnable.run(step, fact) end)
     |> List.first()
-    |> Map.get(:value)
+    |> case do
+      nil -> nil
+      %{value: value} -> value
+    end
   end
 
   # defimpl Dagger.Runnable do
@@ -162,11 +88,12 @@ defmodule Dagger.Workflow.Rule do
     alias Dagger.Workflow.{Step, Steps, Condition, Rule}
     alias Dagger.Workflow
 
-    def to_workflow(%Rule{expression: expression} = rule) do
+    def to_workflow(%Rule{expression: expression, arity: arity} = rule) do
+      IO.inspect(expression, label: "expression")
       Enum.reduce(expression, Workflow.new(rule.name), fn
 
         {lhs, rhs}, wrk when is_function(lhs) ->
-          condition = Condition.new(lhs)
+          condition = Condition.new(lhs, arity)
           reaction = Step.new(work: work_of_rhs(lhs, rhs))
 
           rule_wrk =
@@ -176,7 +103,7 @@ defmodule Dagger.Workflow.Rule do
           Workflow.merge(wrk, rule_wrk)
 
         {true = lhs, rhs}, wrk ->
-          condition = Condition.new(&Steps.always_true/1)
+          condition = Condition.new(&Steps.always_true/1, arity)
           reaction = Step.new(work: work_of_rhs(lhs, rhs))
 
           rule_wrk =
@@ -190,7 +117,7 @@ defmodule Dagger.Workflow.Rule do
           IO.inspect(Macro.to_string(condi), label: "condition built")
           condition =
             condi
-            |> Condition.new()
+            |> Condition.new(arity)
             |> IO.inspect(label: "condition")
 
           reaction = Step.new(work: work_of_rhs([{:_anything, [], nil}], rhs))
@@ -212,7 +139,7 @@ defmodule Dagger.Workflow.Rule do
 
           condition =
             condi
-            |> Condition.new()
+            |> Condition.new(arity)
             |> IO.inspect(label: "condition")
 
           reaction = Step.new(work: work_of_rhs(lhs, rhs))
@@ -230,10 +157,11 @@ defmodule Dagger.Workflow.Rule do
     end
 
     defp work_of_lhs(lhs) do
-      false_branch = {:->, [], [[{:_, [], Elixir}], false]}
+      false_branch = false_branch_for_lhs(lhs)
+      # false_branch = {:->, [], [[{:_, [], Elixir}], false]}
 
       branches =
-        [false_branch | Enum.map(lhs, &check_branch_of_expression/1)]
+        [false_branch | [check_branch_of_expression(lhs)]]
         |> Enum.reverse()
 
       check = {:fn, [], branches}
@@ -269,6 +197,22 @@ defmodule Dagger.Workflow.Rule do
       fun
     end
 
+    defp false_branch_for_lhs([{:when, _meta, args} | _]) do
+      arg_false_branches =
+        args
+        |> Enum.reject(& not match?({_arg_name, _meta, nil}, &1))
+        |> Enum.map(fn _ -> {:_, [], Elixir} end)
+
+      {:->, [], [arg_false_branches, false]}
+    end
+
+    defp false_branch_for_lhs(lhs) when is_list(lhs) do
+      # we may need to do an ast traversal here
+      {:->, [], [Enum.map(lhs, fn _ -> {:_, [], Elixir} end), false]}
+    end
+
+
+
     # defp check_branch_of_expression(lhs) when is_function(lhs) do
     #   # quote bind_quoted: [lhs: lhs] do
     #   #   fn lhs
@@ -293,6 +237,11 @@ defmodule Dagger.Workflow.Rule do
     #   {:->, [], [[:_], wrapper]}
     # end
 
-    defp check_branch_of_expression(lhs), do: {:->, [], [[lhs], true]}
+    defp check_branch_of_expression(lhs) when is_list(lhs) do
+      IO.inspect(lhs, label: "lhx in check_branch_of_expression/1")
+      {:->, [], [lhs, true]}
+    end
+
+    # defp check_branch_of_expression(lhs), do: {:->, [], [[lhs], true]}
   end
 end

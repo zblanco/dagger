@@ -301,6 +301,7 @@ defmodule Dagger.Workflow do
     Rule,
     Accumulator,
     Step,
+    Steps,
     Fact,
     Activation,
     Agenda,
@@ -354,35 +355,127 @@ defmodule Dagger.Workflow do
 
   defp root(), do: %Root{}
 
+  # plan: cycle through a single phase of match/lhs/conditionals
+  # plan_eagerly: cycle through matches until only step/rhs runnables are ready
+
+  # react: plan_eagerly through lhs, then do one phase of rhs runnables
+  # react_eagerly: cycle through lhs eagerly like react, but also any subsequent phases of rhs runnables
+
   @doc """
-  For a new set of inputs, this prepares the workflow agenda for the next cycle of reactions.
-
-  Planning for a new fact results in the activation protocl being invoked for each fact + step
-
-  In regards to an inference engine's match -> select -> execute phase, this is the match phase.
-
-  Dagger Workflow evaluation is forward chaining meaning from the root of the graph it starts
-    by evaluating the direct children of the root node. If the workflow has any sort of
-    conditions (from rules, etc) these conditions are prioritized in the agenda for the next cycle.
-
-  A runner implementation may want to eagerly evaluate conditions to prepare the full set of runnable steps.
+  Cycles eagerly through a prepared agenda in the match phase.
   """
-  def plan(%__MODULE__{} = wrk, %Fact{} = fact) do
-    wrk = Activation.activate(root(), wrk, fact)
-
+  def react(%__MODULE__{agenda: %Agenda{cycles: cycles}} = wrk) when cycles > 0 do
     Enum.reduce(Map.values(wrk.agenda.runnables), wrk, fn {node, fact}, wrk ->
       Activation.activate(node, wrk, fact)
     end)
   end
 
-  def plan(%__MODULE__{} = wrk, facts) when is_list(facts) do
-    Enum.reduce(facts, wrk, fn fact, wrk ->
-      plan(wrk, fact)
+  # def react(%__MODULE__{agenda: %Agenda{cycles: cycles}} = wrk) when cycles > 0 do
+  #   Enum.reduce(Map.values(wrk.agenda.runnables), wrk, fn {node, fact}, wrk ->
+  #     Activation.activate(node, wrk, fact)
+  #   end)
+  # end
+
+  @doc """
+  Plans eagerly through the match phase then executes a single cycle of right hand side runnables.
+  """
+  def react(%__MODULE__{} = wrk, %Fact{ancestry: nil} = fact) do
+    react(Activation.activate(root(), wrk, fact))
+  end
+
+  def react(%__MODULE__{} = wrk, raw_fact) do
+    react(wrk, Fact.new(value: raw_fact))
+  end
+
+  @doc """
+  Cycles eagerly through runnables resulting from the input fact.
+
+  Eagerly runs through the planning / match phase as does `react/2` but also eagerly executes
+  subsequent phases of runnables until satisfied (nothing new to react to i.e. all
+  terminating leaf nodes have been traversed to and executed) resulting in a fully satisfied agenda.
+
+  `react_until_satisfied/2` is good for nested step -> [child_step_1, child_step2, ...] dependencies
+  where the goal is to get to the results at the end of the pipeline of steps.
+
+  One should be careful about using react_until_satisfied with infinite loops as evaluation will not terminate.
+
+  If your goal is to evaluate some non-terminating program to some finite number of cycles - wrapping
+  `react/2` in a process that can track workflow evaluation cycles until some point is likely preferable.
+  """
+  def react_until_satisfied(%__MODULE__{} = wrk, %Fact{ancestry: nil} = fact) do
+    wrk
+    |> react(fact)
+    |> react_until_satisfied()
+    # react_until_satisfied(Activation.activate(root(), wrk, fact))
+  end
+
+  def react_until_satisfied(%__MODULE__{} = wrk, raw_fact) do
+    react_until_satisfied(wrk, Fact.new(value: raw_fact))
+  end
+
+  def react_until_satisfied(%__MODULE__{} = workflow) do
+    Enum.reduce_while(next_runnables(workflow), workflow, fn {node, fact} = _runnable, wrk ->
+      wrk = Activation.activate(node, wrk, fact)
+
+      if Agenda.any_runnables_for_next_cycle?(wrk) do
+        {:cont, wrk}
+      else
+        {:halt, wrk}
+      end
     end)
   end
 
+  @doc """
+  For a new set of inputs, `plan/2` prepares the workflow agenda for the next cycle of reactions by
+  matching through left-hand-side conditions in the workflow network.
+
+  For an inference engine's match -> select -> execute phase, this is the match phase.
+
+  Dagger Workflow evaluation is forward chaining meaning from the root of the graph it starts
+    by evaluating the direct children of the root node. If the workflow has any sort of
+    conditions (from rules, etc) these conditions are prioritized in the agenda for the next cycle.
+  """
+  def plan(%__MODULE__{} = wrk, %Fact{} = fact) do
+    Activation.activate(root(), wrk, fact)
+  end
+
+  # def plan(%__MODULE__{} = wrk, facts) when is_list(facts) do
+  #   Enum.reduce(facts, wrk, fn fact, wrk ->
+  #     plan(wrk, fact)
+  #   end)
+  # end
+
   def plan(%__MODULE__{} = wrk, raw_fact) do
     plan(wrk, Fact.new(value: raw_fact))
+  end
+
+  def plan(%__MODULE__{} = wrk) do
+    wrk
+    |> next_runnables()
+    |> Enum.reduce(wrk, fn {node, fact}, wrk ->
+      Activation.activate(node, wrk, fact)
+    end)
+  end
+
+  @doc """
+  What is the eager planning strategy?
+
+  Cycle through the workflow activations until all conditional / lhs activate.
+
+  Goal? To determine if the workflow is runnable once terminated to only Step runnables.
+  """
+  def plan_eagerly(%__MODULE__{} = wrk, %Fact{} = input_fact) do
+    wrk = plan(wrk, input_fact)
+
+    if Map.has_key?(wrk.activations, input_fact.hash) do
+      plan(wrk)
+    else
+      wrk
+    end
+  end
+
+  def plan_eagerly(%__MODULE__{} = wrk, raw_fact) do
+    plan_eagerly(wrk, Fact.new(value: raw_fact))
   end
 
   def is_runnable?(%__MODULE__{agenda: agenda}) do
@@ -396,6 +489,16 @@ defmodule Dagger.Workflow do
     }
   end
 
+  def log_fact(
+        %__MODULE__{activations: activations, facts: facts} = wrk,
+        %Fact{value: :satisfied, ancestry: {condition_hash, fact_hash}} = fact
+      ) do
+    %__MODULE__{wrk |
+      activations: Map.put(activations, fact_hash, MapSet.new([condition_hash])), # do we ever want the inverse hash table (cond_hash, set<fact_hashe>) or both?
+      facts: [fact | facts]
+    }
+  end
+
   def log_fact(%__MODULE__{facts: facts} = wrk, %Fact{} = fact) do
     %__MODULE__{wrk | facts: [fact | facts]}
   end
@@ -405,24 +508,26 @@ defmodule Dagger.Workflow do
       wrk
       | agenda:
           Enum.reduce(runnables, agenda, fn runnable, agenda ->
-            Agenda.add_runnable(agenda, runnable)
+            agenda
+            |> Agenda.add_runnable(runnable)
+            |> Agenda.next_cycle()
           end)
     }
   end
 
-  @doc """
-  Runs a runnable workflow by executing steps ready in the agenda.
+  # @doc """
+  # Runs a runnable workflow by executing steps ready in the agenda.
 
-  Appends resulting facts to the log.
-  """
-  def run(%__MODULE__{agenda: agenda} = wrk) do
-    wrk =
-      Enum.reduce(agenda.runnables, wrk, fn {_key, {step, fact}}, wrk ->
-        Activation.activate(step, wrk, fact)
-      end)
+  # Appends resulting facts to the log.
+  # """
+  # def run(%__MODULE__{agenda: agenda} = wrk) do
+  #   wrk =
+  #     Enum.reduce(agenda.runnables, wrk, fn {_key, {step, fact}}, wrk ->
+  #       Activation.activate(step, wrk, fact)
+  #     end)
 
-    %__MODULE__{wrk | agenda: Agenda.next_cycle(wrk.agenda)}
-  end
+  #   %__MODULE__{wrk | agenda: Agenda.next_cycle(wrk.agenda)}
+  # end
 
   @doc """
   Returns actual side effects of the workflow - i.e. facts resulting from the execution of a step.
@@ -471,13 +576,18 @@ defmodule Dagger.Workflow do
         %Condition{} = condition,
         %Step{} = reaction_step
       ) do
+    arity_check = Steps.is_of_arity?(condition.arity)
+    arity_condition = Condition.new(arity_check)
+
     %__MODULE__{
       workflow
       | flow:
           flow
+          |> Graph.add_vertex(arity_condition, [arity_condition.hash])
           |> Graph.add_vertex(condition, [condition.hash])
           |> Graph.add_vertex(reaction_step, [reaction_step.hash, reaction_step.name])
-          |> Graph.add_edge(root(), condition, label: {%Root{}, condition.hash})
+          |> Graph.add_edge(root(), arity_condition, label: {%Root{}, arity_condition.hash})
+          |> Graph.add_edge(arity_condition, condition, label: {%Root{}, condition.hash})
           |> Graph.add_edge(condition, reaction_step, label: {condition.hash, reaction_step.hash})
     }
   end
@@ -577,7 +687,7 @@ defmodule Dagger.Workflow do
 
   def get_step_by_name(%__MODULE__{flow: flow}, step_name) do
     case flow
-         # todo: think about a cheaper way to do this...
+         # we'll want map access time index on work function hashes to make this fast
          |> Graph.vertices()
          |> Enum.find(
            {:error, :step_not_found},
@@ -601,10 +711,10 @@ defmodule Dagger.Workflow do
   See the `Dagger.Accumulator module` for more details.
   """
   def add_accumulator(%__MODULE__{} = workflow, accumulator) do
-    %Accumulator{initializer: initializer, state_reactors: state_reactors} = accumulator
+    %Accumulator{init: init, reducers: reducers} = accumulator
 
-    Enum.reduce(state_reactors, add_rule(workflow, initializer), fn reactor, workflow ->
-      add_rule(workflow, reactor)
+    Enum.reduce(reducers, add_rule(workflow, init), fn reducer, workflow ->
+      add_rule(workflow, reducer)
     end)
   end
 

@@ -22,6 +22,14 @@ defmodule WorkflowTest do
     def count_uniques(word_count) do
       Enum.count(word_count)
     end
+
+    def first_word(list_of_words) do
+      List.first(list_of_words)
+    end
+
+    def last_word(list_of_words) do
+      List.last(list_of_words)
+    end
   end
 
   defmodule Counting do
@@ -45,16 +53,24 @@ defmodule WorkflowTest do
       Dagger.workflow(
         name: "basic text processing example",
         steps: [
-          {Dagger.step(name: "tokenize", work: &TextProcessing.tokenize/1), [
-            {Dagger.step(name: "count words", work: &TextProcessing.count_words/1), [
-              Dagger.step(name: "count unique words", work: &TextProcessing.count_uniques/1)
-            ]}
-          ]}
+          {Dagger.step(name: "tokenize", work: &TextProcessing.tokenize/1),
+           [
+             {Dagger.step(name: "count words", work: &TextProcessing.count_words/1),
+              [
+                Dagger.step(name: "count unique words", work: &TextProcessing.count_uniques/1)
+              ]},
+              Dagger.step(name: "first word", work: &TextProcessing.first_word/1),
+              Dagger.step(name: "last word", work: &TextProcessing.last_word/1)
+           ]}
         ]
       )
     end
 
     def counter_accumulator_with_triggers() do
+      # Dagger.accumulator(
+
+      # )
+
       Workflow.new(name: "counter accumulator")
       |> Workflow.add_accumulator(
         Accumulator.new(
@@ -108,55 +124,15 @@ defmodule WorkflowTest do
   def setup_test_pipelines(_context) do
     {:ok,
      [
-       basic_text_processing_pipeline: TestWorkflows.basic_text_processing_pipeline(),
-      #  counter_accumulator_with_triggers: TestWorkflows.counter_accumulator_with_triggers(),
-      #  simple_lock: TestWorkflows.simple_lock()
+       basic_text_processing_pipeline: TestWorkflows.basic_text_processing_pipeline()
+       #  counter_accumulator_with_triggers: TestWorkflows.counter_accumulator_with_triggers(),
+       #  simple_lock: TestWorkflows.simple_lock()
      ]}
-  end
-
-  describe "Workflow.stream/2" do
-    setup [:setup_test_pipelines]
-
-    test "stream/2 each cycle of a workflow stream returns a transformed workflow with a new agenda",
-         %{basic_text_processing_pipeline: wrk} do
-      cycle_1_workflow = Workflow.run(wrk, "anybody want a peanut?")
-      # just a getter for %Workflow{agenda: agenda} -> agenda
-      cycle_1_agenda = Workflow.agenda(cycle_1_workflow)
-
-      # first cycle produces a runnable with the first step and our input
-      assert length(cycle_1_agenda) == 1
-
-      assert match?(cycle_1_agenda, [
-               {%Step{name: "tokenize"}, %Fact{value: "anybody want a peanut?"}}
-             ])
-
-      # this operation is always embarassingly parallel
-      cycle_1_results = Enum.map(cycle_1_agenda, &Runnable.run(&1))
-
-      cycle_2_workflow = Workflow.run(cycle_1_workflow, cycle_1_results)
-      cycle_2_agenda = Workflow.agenda(cycle_2_workflow)
-
-      assert length(cycle_2_agenda) == 1
-
-      assert match?(cycle_2_agenda, [
-               {%Step{name: "count words"}, %Fact{value: ["anybody", "want", "a", "peanut?"]}}
-             ])
-
-      cycle_2_results = Enum.map(cycle_1_agenda, &Runnable.run(&1))
-
-      cycle_3_workflow = Workflow.run(cycle_2_workflow, cycle_2_results)
-      cycle_3_agenda = Workflow.agenda(cycle_3_workflow)
-
-      assert length(cycle_3_agenda) == 1
-
-      assert match?(cycle_3_agenda, [
-               {%Step{name: "count words"}, %Fact{}}
-             ])
-    end
   end
 
   describe "workflow construction" do
     test "creating a new workflow" do
+      assert match?(%Workflow{}, Workflow.new("workflow"))
     end
 
     test "defining a workflow using the macro/keyword syntax" do
@@ -165,23 +141,23 @@ defmodule WorkflowTest do
       Dagger.workflow(
         name: "a test workflow",
         accumulators: [
-            Dagger.accumulator(
-              name: "fancy counter",
-              init: 0,
-              reducers: [
-                fn
-                  num when num <= 10 -> num + 1
-                  num when num > 10 -> num + 2
-                  num when num > 20 -> num + 2
-                end,
-                Dagger.rule(
-                  fn num when num > 30 -> num + 3 end,
-                  name: "greater than 30 increment more",
-                  description: "when the number is greater than 30 we increment by 3"
-                )
-              ]
-            )
-          ],
+          Dagger.accumulator(
+            name: "fancy counter",
+            init: 0,
+            reducers: [
+              fn
+                num when num <= 10 -> num + 1
+                num when num > 10 -> num + 2
+                num when num > 20 -> num + 2
+              end,
+              Dagger.rule(
+                fn num when num > 30 -> num + 3 end,
+                name: "greater than 30 increment more",
+                description: "when the number is greater than 30 we increment by 3"
+              )
+            ]
+          )
+        ],
         rules: [
           Dagger.rule(fn :foo -> :bar end,
             name: "test rule",
@@ -192,9 +168,8 @@ defmodule WorkflowTest do
             "potato" -> "potato!"
             :tomato -> "tomato!"
             item when is_integer(item) and item > 41 and item < 43 -> "fourty two"
-          end, # should result in 4 rules for each clause and additional guard check conditions to the root of the workflow
-
-        ]
+          end,
+          an_existing_rule        ]
       )
     end
 
@@ -237,31 +212,29 @@ defmodule WorkflowTest do
           ]
         )
 
-      wrk = Workflow.plan(workflow, :potato)
+      wrk = Workflow.plan_eagerly(workflow, :potato)
 
       assert Enum.count(Workflow.next_runnables(wrk)) == 1
-      assert Enum.count(wrk.facts) == 2
+      assert Enum.any?(wrk.facts, &match?(%{value: :satisfied}, &1))
 
       # a user ought to be able to run a concurrent set of runnables at this point
       # but the api for doing so needs to not require a reduce + activate + agenda cycling as that's too complex
 
-      ran_runnables =
+      next_facts =
         Workflow.next_runnables(wrk)
-        |> Enum.map(& Dagger.Workflow.Steps.run(&1))
+        |> Enum.map(fn {work, input} -> Dagger.Runnable.run(work, input) end)
+        |> IO.inspect(label: "next facts")
 
-      wrk = Workflow.run(wrk)
+      assert match?(%{value: "potato!"}, List.first(next_facts))
 
-      assert Enum.count(wrk.facts) == 3
-      assert Workflow.reactions(wrk) == ["potato!"]
-      assert wrk.agenda.cycles == 1
+      wrk = Workflow.plan_eagerly(workflow, 42)
+      assert Enum.count(Workflow.next_runnables(wrk)) == 1
 
-      wrk = Workflow.plan(wrk, :tomato)
+      [%{value: result_value} | _rest] =
+        Workflow.next_runnables(wrk)
+        |> Enum.map(fn {work, input} -> Dagger.Runnable.run(work, input) end)
 
-      assert Enum.count(wrk.agenda.runnables) == 1
-
-      wrk = Workflow.run(wrk)
-      assert Workflow.reactions(wrk) == ["tomato!", "potato!"]
-      assert wrk.agenda.cycles == 2
+      assert is_integer(result_value)
     end
   end
 
@@ -300,21 +273,30 @@ defmodule WorkflowTest do
   describe "use cases" do
     setup [:setup_test_pipelines]
 
-    test "counter accumulation with triggers", %{counter_accumulator_with_triggers: wrk} do
-      reactions = Workflow.react(wrk, [:start_count, :count, :count, :count])
+    # test "counter accumulation with triggers", %{counter_accumulator_with_triggers: wrk} do
+    #   reactions = Workflow.react(wrk, [:start_count, :count, :count, :count])
 
-      # assert match?(List.last(reactions), %Fact{type: :state_produced, value: 2})
-    end
+    #   # assert match?(List.last(reactions), %Fact{type: :state_produced, value: 2})
+    # end
 
-    test "simple lock", %{simple_lock: wrk} do
-      assert false
-    end
+    # test "simple lock", %{simple_lock: wrk} do
+    #   assert false
+    # end
 
     test "text processing pipeline", %{basic_text_processing_pipeline: wrk} do
-      reactions = Workflow.react(wrk, "anybody want a peanut") |> Enum.to_list()
-      latest_reaction = List.first(reactions)
-      assert match?(latest_reaction, %Fact{})
-      assert latest_reaction.value == 4
+      wrk =
+        wrk
+        |> Workflow.plan_eagerly("anybody want a peanut")
+
+      wrk =
+        Enum.reduce(
+          Workflow.next_runnables(wrk),
+          wrk,
+          fn {step, fact}, wrk ->
+            Workflow.plan_eagerly(wrk, Dagger.Runnable.run(step, fact))
+        end)
+        |> IO.inspect()
+
     end
   end
 end

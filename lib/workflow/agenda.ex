@@ -25,7 +25,7 @@ defmodule Dagger.Workflow.Agenda do
   end
 
   def add_runnable(%__MODULE__{runnables: runnables} = agenda, {node, fact} = runnable) do
-    %__MODULE__{agenda | runnables: Map.put_new(runnables, {node.hash, fact.hash}, runnable)}
+    %__MODULE__{agenda | runnables: Map.put_new(runnables, runnable_key(node, fact), runnable)}
   end
 
   def prune_runnable(%__MODULE__{runnables: runnables} = agenda, node, fact) do

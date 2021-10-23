@@ -18,11 +18,15 @@ defimpl Dagger.Runnable, for: Dagger.Workflow.Condition do
 
   def run(condition, %Fact{} = fact) do
     with true <- Steps.run(condition.work, fact.value) do
-      true
+      Fact.new(
+          value: :satisfied,
+          ancestry: {condition.hash, fact.hash},
+          runnable: {condition, fact}
+        )
     else
       _otherwise ->
         Fact.new(
-          value: :satisfied,
+          value: :not_satisfied,
           ancestry: {condition.hash, fact.hash},
           runnable: {condition, fact}
         )
