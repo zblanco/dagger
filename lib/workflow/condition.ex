@@ -38,7 +38,7 @@ defmodule Dagger.Workflow.Condition do
   @type t() :: %__MODULE__{
           work: runnable(),
           hash: integer(),
-          arity: arity(),
+          arity: arity()
         }
 
   @doc """
@@ -58,7 +58,7 @@ defmodule Dagger.Workflow.Condition do
     %__MODULE__{
       work: work,
       hash: Steps.work_hash(work),
-      arity: arity,
+      arity: arity
     }
   end
 end

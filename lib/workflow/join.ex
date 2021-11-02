@@ -27,12 +27,13 @@ defmodule Dagger.Workflow.Join do
   6. Other join nodes dependent on other join node satisfactions may evaluate again using the same flow.
   """
   alias Dagger.Workflow
+
   alias Dagger.Workflow.{
     Fact,
     Join,
     Steps,
     Runnable,
-    Activation,
+    Activation
   }
 
   defstruct left: nil,
@@ -40,7 +41,11 @@ defmodule Dagger.Workflow.Join do
             hash: nil
 
   def new(left, right) do
-    %__MODULE__{left: {:not_satisfied, left}, right: {:not_satisfied, right}, hash: Steps.join_hash(left, right)}
+    %__MODULE__{
+      left: {:not_satisfied, left},
+      right: {:not_satisfied, right},
+      hash: Steps.join_hash(left, right)
+    }
   end
 
   # def apply(%__MODULE__{left: {:not_satisfied, left}} = join, %Fact{value: :left_satisfied, ancestry}) do
@@ -51,7 +56,9 @@ defmodule Dagger.Workflow.Join do
   #   %__MODULE__{join | right: {:satisfied, right}}
   # end
 
-  def fully_satisfied?(%__MODULE__{left: {:satisfied, _left}, right: {:satisfied, _right}}), do: true
+  def fully_satisfied?(%__MODULE__{left: {:satisfied, _left}, right: {:satisfied, _right}}),
+    do: true
+
   def fully_satisfied?(%__MODULE__{}), do: false
 
   # defimpl Runnable do
@@ -88,7 +95,6 @@ defmodule Dagger.Workflow.Join do
   #   end
   # end
 
-
   # defimpl Activation do
   #   # activation of a join is a state transformation of the join and the worklow
   #   # when
@@ -111,5 +117,4 @@ defmodule Dagger.Workflow.Join do
   #     }
   #   end
   # end
-
 end

@@ -406,6 +406,7 @@ defmodule Dagger.Workflow do
     wrk
     |> react(fact)
     |> react_until_satisfied()
+
     # react_until_satisfied(Activation.activate(root(), wrk, fact))
   end
 
@@ -417,7 +418,7 @@ defmodule Dagger.Workflow do
     Enum.reduce_while(next_runnables(workflow), workflow, fn {node, fact} = _runnable, wrk ->
       wrk = Activation.activate(node, wrk, fact)
 
-      if Agenda.any_runnables_for_next_cycle?(wrk) do
+      if Agenda.any_runnables_for_next_cycle?(wrk.agenda) do
         {:cont, wrk}
       else
         {:halt, wrk}
@@ -493,9 +494,11 @@ defmodule Dagger.Workflow do
         %__MODULE__{activations: activations, facts: facts} = wrk,
         %Fact{value: :satisfied, ancestry: {condition_hash, fact_hash}} = fact
       ) do
-    %__MODULE__{wrk |
-      activations: Map.put(activations, fact_hash, MapSet.new([condition_hash])), # do we ever want the inverse hash table (cond_hash, set<fact_hashe>) or both?
-      facts: [fact | facts]
+    %__MODULE__{
+      wrk
+      | # do we ever want the inverse hash table (cond_hash, set<fact_hashe>) or both?
+        activations: Map.put(activations, fact_hash, MapSet.new([condition_hash])),
+        facts: [fact | facts]
     }
   end
 

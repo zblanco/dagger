@@ -54,7 +54,6 @@ defmodule Dagger.Workflow.Rule do
   """
   @type rhs() :: any()
 
-
   def check(%__MODULE__{} = rule, input) do
     rule
     |> Dagger.Flowable.to_workflow()
@@ -81,8 +80,8 @@ defmodule Dagger.Workflow.Rule do
 
     def to_workflow(%Rule{expression: expression, arity: arity} = rule) do
       IO.inspect(expression, label: "expression")
-      Enum.reduce(expression, Workflow.new(rule.name), fn
 
+      Enum.reduce(expression, Workflow.new(rule.name), fn
         {lhs, rhs}, wrk when is_function(lhs) ->
           condition = Condition.new(lhs, arity)
           reaction = Step.new(work: work_of_rhs(lhs, rhs))
@@ -106,6 +105,7 @@ defmodule Dagger.Workflow.Rule do
         {[] = _lhs, rhs}, wrk ->
           condi = work_of_lhs([{:_anything, [], nil}])
           IO.inspect(Macro.to_string(condi), label: "condition built")
+
           condition =
             condi
             |> Condition.new(arity)
@@ -168,9 +168,12 @@ defmodule Dagger.Workflow.Rule do
 
     defp work_of_rhs(lhs, rhs) when is_function(lhs) do
       IO.inspect(rhs, label: "workofrhs")
-      rhs = {:fn, [], [
-        {:->, [], [[{:_, [], Elixir}], rhs]}
-      ]}
+
+      rhs =
+        {:fn, [],
+         [
+           {:->, [], [[{:_, [], Elixir}], rhs]}
+         ]}
 
       IO.inspect(Macro.to_string(rhs), label: "rhs as string")
       {fun, _} = Code.eval_quoted(rhs)
@@ -179,9 +182,12 @@ defmodule Dagger.Workflow.Rule do
 
     defp work_of_rhs(lhs, rhs) do
       IO.inspect(rhs, label: "workofrhs")
-      rhs = {:fn, [], [
-        {:->, [], [lhs, rhs]}
-      ]}
+
+      rhs =
+        {:fn, [],
+         [
+           {:->, [], [lhs, rhs]}
+         ]}
 
       IO.inspect(Macro.to_string(rhs), label: "rhs as string")
       {fun, _} = Code.eval_quoted(rhs)
@@ -191,7 +197,7 @@ defmodule Dagger.Workflow.Rule do
     defp false_branch_for_lhs([{:when, _meta, args} | _]) do
       arg_false_branches =
         args
-        |> Enum.reject(& not match?({_arg_name, _meta, nil}, &1))
+        |> Enum.reject(&(not match?({_arg_name, _meta, nil}, &1)))
         |> Enum.map(fn _ -> {:_, [], Elixir} end)
 
       {:->, [], [arg_false_branches, false]}
@@ -201,8 +207,6 @@ defmodule Dagger.Workflow.Rule do
       # we may need to do an ast traversal here
       {:->, [], [Enum.map(lhs, fn _ -> {:_, [], Elixir} end), false]}
     end
-
-
 
     # defp check_branch_of_expression(lhs) when is_function(lhs) do
     #   # quote bind_quoted: [lhs: lhs] do

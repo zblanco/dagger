@@ -42,7 +42,9 @@ defmodule Dagger.Workflow.Steps do
     fn
       args when is_list(args) ->
         if(arity == 1, do: true, else: false)
-      args -> arity_of(args) == arity
+
+      args ->
+        arity_of(args) == arity
     end
   end
 

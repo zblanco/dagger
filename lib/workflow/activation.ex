@@ -47,6 +47,7 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Condition do
       ) do
     IO.inspect(condition)
     IO.inspect(fact)
+
     with true <- try_to_run_work(condition.work, fact.value, condition.arity) do
       satisfied_fact = satisfied_fact(condition, fact)
 

@@ -266,7 +266,8 @@ defmodule Dagger do
 
   defp add_dependent_steps({parent_step, dependent_steps}, workflow) do
     Enum.reduce(dependent_steps, workflow, fn
-      {_parent_step, _dependent_steps} = parent_and_children, wrk ->
+      {step, _dependent_steps} = parent_and_children, wrk ->
+        wrk = Workflow.add_step(wrk, parent_step, step)
         add_dependent_steps(parent_and_children, wrk)
 
       step, wrk ->

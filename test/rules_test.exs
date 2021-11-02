@@ -97,8 +97,12 @@ defmodule RulesTest do
     # end
 
     test "we can create a rule that always fires" do
-      always_fires_rule_arity_1 = Dagger.rule(fn _anything -> :potato end, name: "1_arity_rule") |> IO.inspect(label: "1_arity_rule")
-      always_fires_rule_arity_0 = Dagger.rule(fn -> :potato end, name: "0_arity_rule") |> IO.inspect(label: "0_arity_rule")
+      always_fires_rule_arity_1 =
+        Dagger.rule(fn _anything -> :potato end, name: "1_arity_rule")
+        |> IO.inspect(label: "1_arity_rule")
+
+      always_fires_rule_arity_0 =
+        Dagger.rule(fn -> :potato end, name: "0_arity_rule") |> IO.inspect(label: "0_arity_rule")
 
       inputs = [
         "potato",
@@ -112,7 +116,9 @@ defmodule RulesTest do
       assert not Enum.any?(Enum.map(inputs, &Rule.check(always_fires_rule_arity_0, &1)))
 
       assert Enum.all?(Enum.map(inputs, &(Rule.run(always_fires_rule_arity_1, &1) == :potato)))
-      Enum.map(inputs, &(Rule.run(always_fires_rule_arity_0, &1) == :potato)) |> IO.inspect(label: "Rule.run/2 on :potato")
+
+      Enum.map(inputs, &(Rule.run(always_fires_rule_arity_0, &1) == :potato))
+      |> IO.inspect(label: "Rule.run/2 on :potato")
     end
 
     test "a rule can be made out of functions with an arity of 0 or 1" do
@@ -145,7 +151,8 @@ defmodule RulesTest do
                %Rule{},
                Dagger.rule(&RulesTest.Examples.potato_baker/1,
                  name: "1_arity_rule_from_captured_function_with_overloads"
-               ) |> IO.inspect()
+               )
+               |> IO.inspect()
              )
 
       assert match?(
@@ -157,12 +164,14 @@ defmodule RulesTest do
                %Rule{},
                Dagger.rule(&Examples.potato_block_transformer/1,
                  name: "1_arity_rule_from_block_func_definition"
-               ) |> IO.inspect()
+               )
+               |> IO.inspect()
              )
     end
 
     test "a rule's reaction can return an arbitrary term" do
-      term_rule = Dagger.rule(reaction: "potato", name: "term_rule") |> IO.inspect(label: "term_rule")
+      term_rule =
+        Dagger.rule(reaction: "potato", name: "term_rule") |> IO.inspect(label: "term_rule")
 
       Dagger.Flowable.to_workflow(term_rule) |> IO.inspect(label: "term rule workflow")
 
@@ -209,8 +218,8 @@ defmodule RulesTest do
         Dagger.rule(
           fn
             term
-            when term in [:potato, "potato"] and
-                   term != "tomato" or
+            when (term in [:potato, "potato"] and
+                    term != "tomato") or
                    (binary_part(term, 0, 4) == "pota" or
                       (is_atom(term) and term == :potato)) ->
               "potato!!"

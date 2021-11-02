@@ -1,4 +1,5 @@
 ExUnit.start()
+
 defmodule CompileTimeAssertions do
   defmodule DidNotRaise, do: defstruct(message: nil)
 

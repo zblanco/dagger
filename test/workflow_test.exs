@@ -59,8 +59,8 @@ defmodule WorkflowTest do
               [
                 Dagger.step(name: "count unique words", work: &TextProcessing.count_uniques/1)
               ]},
-              Dagger.step(name: "first word", work: &TextProcessing.first_word/1),
-              Dagger.step(name: "last word", work: &TextProcessing.last_word/1)
+             Dagger.step(name: "first word", work: &TextProcessing.first_word/1),
+             Dagger.step(name: "last word", work: &TextProcessing.last_word/1)
            ]}
         ]
       )
@@ -169,7 +169,8 @@ defmodule WorkflowTest do
             :tomato -> "tomato!"
             item when is_integer(item) and item > 41 and item < 43 -> "fourty two"
           end,
-          an_existing_rule        ]
+          an_existing_rule
+        ]
       )
     end
 
@@ -190,7 +191,6 @@ defmodule WorkflowTest do
   end
 
   describe "left hand side / match phase evaluation" do
-
     test "plan/2 evaluates a single layer of the match phase with an external input" do
       workflow =
         Dagger.workflow(
@@ -352,9 +352,9 @@ defmodule WorkflowTest do
           wrk,
           fn {step, fact}, wrk ->
             Workflow.plan_eagerly(wrk, Dagger.Runnable.run(step, fact))
-        end)
+          end
+        )
         |> IO.inspect()
-
     end
   end
 end
