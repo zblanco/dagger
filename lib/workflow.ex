@@ -586,11 +586,20 @@ defmodule Dagger.Workflow do
       workflow
       | flow:
           flow
-          |> Graph.add_vertex(arity_condition, [arity_condition.hash, "is_of_arity_#{condition.arity}"])
+          |> Graph.add_vertex(arity_condition, [
+            arity_condition.hash,
+            "is_of_arity_#{condition.arity}"
+          ])
           |> Graph.add_vertex(condition, [condition.hash, function_name(condition.work)])
-          |> Graph.add_vertex(reaction_step, [reaction_step.hash, reaction_step.name, function_name(reaction_step.work)])
+          |> Graph.add_vertex(reaction_step, [
+            reaction_step.hash,
+            reaction_step.name,
+            function_name(reaction_step.work)
+          ])
           |> Graph.add_edge(root(), arity_condition, label: {:root, arity_condition.hash})
-          |> Graph.add_edge(arity_condition, condition, label: {"is_of_arity_#{condition.arity}", condition.hash})
+          |> Graph.add_edge(arity_condition, condition,
+            label: {"is_of_arity_#{condition.arity}", condition.hash}
+          )
           |> Graph.add_edge(condition, reaction_step, label: {condition.hash, reaction_step.hash})
     }
   end
@@ -620,16 +629,20 @@ defmodule Dagger.Workflow do
 
   defp do_merge(into_flow, from_flow, step, %Root{} = parent) do
     into_flow
-    |> Graph.add_vertex(step, [step.hash])
+    |> Graph.add_vertex(step, Graph.vertex_labels(from_flow, step))
     |> Graph.add_edge(parent, step, label: {:root, step.hash})
     |> do_merge(from_flow, next_steps(from_flow, step), step)
   end
 
   defp do_merge(into_flow, from_flow, step, parent) do
     into_flow
-    |> Graph.add_vertex(step, [step.hash])
-    |> Graph.add_edge(parent, step, label: {parent.hash, step.hash})
+    |> Graph.add_vertex(step, Graph.vertex_labels(from_flow, step))
+    |> Graph.add_edge(parent, step, label: edge_label(from_flow, parent, step))
     |> do_merge(from_flow, next_steps(from_flow, step), step)
+  end
+
+  defp edge_label(g, v1, v2) do
+    Graph.edge(g, v1, v2) |> Map.get(:label, {v1.hash, v2.hash})
   end
 
   @doc """
