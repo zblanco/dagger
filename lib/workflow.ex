@@ -642,7 +642,13 @@ defmodule Dagger.Workflow do
   end
 
   defp edge_label(g, v1, v2) do
-    Graph.edge(g, v1, v2) |> Map.get(:label, {v1.hash, v2.hash})
+    edge = Graph.edge(g, v1, v2)
+
+    unless is_nil(edge) do
+      edge |> Map.get(:label)
+    else
+      {v1.hash, v2.hash}
+    end
   end
 
   @doc """
