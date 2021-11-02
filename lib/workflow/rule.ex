@@ -56,13 +56,15 @@ defmodule Dagger.Workflow.Rule do
 
 
   def check(%__MODULE__{} = rule, input) do
-    Dagger.Flowable.to_workflow(rule)
+    rule
+    |> Dagger.Flowable.to_workflow()
     |> Workflow.plan_eagerly(input)
     |> Workflow.is_runnable?()
   end
 
   def run(%__MODULE__{} = rule, input) do
-    Dagger.Flowable.to_workflow(rule)
+    rule
+    |> Dagger.Flowable.to_workflow()
     |> Workflow.plan_eagerly(input)
     |> Workflow.next_runnables()
     |> Enum.map(fn {step, fact} -> Dagger.Runnable.run(step, fact) end)
@@ -72,17 +74,6 @@ defmodule Dagger.Workflow.Rule do
       %{value: value} -> value
     end
   end
-
-  # defimpl Dagger.Runnable do
-  #   alias Dagger.Workflow.{Step, Steps, Condition, Rule}
-  #   alias Dagger.Workflow
-
-  #   def run({%Rule{} = rule, input}) do
-  #     Dagger.Flowable.to_workflow(rule)
-  #     |> Workflow.plan(input)
-  #     |> Workflow.run()
-  #   end
-  # end
 
   defimpl Dagger.Flowable do
     alias Dagger.Workflow.{Step, Steps, Condition, Rule}

@@ -344,7 +344,7 @@ defmodule Dagger.Workflow do
 
   def new(params) when is_list(params) do
     struct!(__MODULE__, params)
-    |> Map.put(:flow, Graph.new() |> Graph.add_vertex(root()))
+    |> Map.put(:flow, Graph.new() |> Graph.add_vertex(root(), :root))
     |> Map.put(:activations, %{})
     |> Map.put(:agenda, Agenda.new())
   end

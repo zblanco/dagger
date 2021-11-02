@@ -189,6 +189,64 @@ defmodule WorkflowTest do
     end
   end
 
+  describe "left hand side / match phase evaluation" do
+
+    test "plan/2 evaluates a single layer of the match phase with an external input" do
+      workflow =
+        Dagger.workflow(
+          name: "test workflow",
+          rules: [
+            Dagger.rule(
+              fn
+                :potato -> "potato!"
+                :tomato -> "tomato!"
+              end,
+              name: "rule1"
+            ),
+            Dagger.rule(
+              fn item when is_integer(item) and item > 41 and item < 43 ->
+                result = Enum.random(1..10)
+                result
+              end,
+              name: "rule2"
+            )
+          ]
+        )
+
+      wrk = Workflow.plan(workflow, :potato)
+
+      assert Enum.count(Workflow.next_runnables(wrk)) == 1
+      assert Enum.count(wrk.facts) == 1
+    end
+
+    test "plan/1 evaluates a single layer" do
+      workflow =
+        Dagger.workflow(
+          name: "test workflow",
+          rules: [
+            Dagger.rule(
+              fn
+                :potato -> "potato!"
+                :tomato -> "tomato!"
+              end,
+              name: "rule1"
+            ),
+            Dagger.rule(
+              fn item when is_integer(item) and item > 41 and item < 43 ->
+                result = Enum.random(1..10)
+                result
+              end,
+              name: "rule2"
+            )
+          ]
+        )
+
+      wrk = Workflow.plan(workflow, :potato)
+
+      Workflow.plan(workflow)
+    end
+  end
+
   describe "workflow cycles / evaluation" do
     test "a workflow made of many rules and conditions can evaluate a composition of the rules" do
       workflow =
