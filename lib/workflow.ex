@@ -618,10 +618,17 @@ defmodule Dagger.Workflow do
     end)
   end
 
+  defp do_merge(into_flow, from_flow, step, %Root{} = parent) do
+    into_flow
+    |> Graph.add_vertex(step, [step.hash])
+    |> Graph.add_edge(parent, step, label: {:root, step.hash})
+    |> do_merge(from_flow, next_steps(from_flow, step), step)
+  end
+
   defp do_merge(into_flow, from_flow, step, parent) do
     into_flow
     |> Graph.add_vertex(step, [step.hash])
-    |> Graph.add_edge(parent, step, label: {%Root{}, step.hash})
+    |> Graph.add_edge(parent, step, label: {parent.hash, step.hash})
     |> do_merge(from_flow, next_steps(from_flow, step), step)
   end
 
