@@ -586,14 +586,16 @@ defmodule Dagger.Workflow do
       workflow
       | flow:
           flow
-          |> Graph.add_vertex(arity_condition, [arity_condition.hash])
-          |> Graph.add_vertex(condition, [condition.hash])
-          |> Graph.add_vertex(reaction_step, [reaction_step.hash, reaction_step.name])
+          |> Graph.add_vertex(arity_condition, [arity_condition.hash, "is_of_arity_#{condition.arity}"])
+          |> Graph.add_vertex(condition, [condition.hash, function_name(condition.work)])
+          |> Graph.add_vertex(reaction_step, [reaction_step.hash, reaction_step.name, function_name(reaction_step.work)])
           |> Graph.add_edge(root(), arity_condition, label: {%Root{}, arity_condition.hash})
           |> Graph.add_edge(arity_condition, condition, label: {%Root{}, condition.hash})
           |> Graph.add_edge(condition, reaction_step, label: {condition.hash, reaction_step.hash})
     }
   end
+
+  defp function_name(fun), do: Function.info(fun, :name) |> elem(1)
 
   @doc """
   Merges the second workflow into the first maintaining the name of the first.
