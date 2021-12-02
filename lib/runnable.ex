@@ -2,7 +2,7 @@ defprotocol Dagger.Runnable do
   @moduledoc """
   The Runnable protocol provides a standard interface for executing a computation from
     which a new Fact may be derived. The purpose of the runnable protocol is extensibility
-    of kinds of data which Dagger can execute.
+    in kinds of data which Dagger can execute.
 
   A runnable in Dagger is typically a {work, input} pair whether it's a
   `{%Step{}, %Fact{}}` or a `{function, arg}`. A runnable might also be a `{%Workflow{}, %Fact{}}`.
@@ -13,10 +13,11 @@ end
 defimpl Dagger.Runnable, for: Dagger.Workflow.Condition do
   alias Dagger.Workflow.{
     Fact,
-    Steps
+    Steps,
+    Condition
   }
 
-  def run(condition, %Fact{} = fact) do
+  def run(%Condition{} = condition, %Fact{} = fact) do
     with true <- Steps.run(condition.work, fact.value) do
       Fact.new(
         value: :satisfied,

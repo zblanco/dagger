@@ -34,9 +34,24 @@ defmodule Dagger.Workflow.Agenda do
 
   def next_runnables(%__MODULE__{runnables: runnables}), do: Map.values(runnables)
 
+  def next_match_runnables(%__MODULE__{runnables: runnables}) do
+    runnables
+    |> Map.values()
+    |> Enum.filter(&is_match_runnable?/1)
+  end
+
   defp runnable_key(node, fact), do: {node.hash, fact.hash}
 
   def any_runnables_for_next_cycle?(%__MODULE__{runnables: runnables}) do
     not Enum.empty?(runnables)
   end
+
+  def any_match_phase_runnables?(%__MODULE__{runnables: runnables}) do
+    Enum.any?(runnables, &is_match_runnable?/1)
+  end
+
+  defp is_match_runnable?({_key, {%Dagger.Workflow.Step{}, _fact}}), do: false
+  defp is_match_runnable?({_key, {_any_other_vertex, _fact}}), do: true
+  defp is_match_runnable?({%Dagger.Workflow.Step{}, _fact}), do: false
+  defp is_match_runnable?({_any_other_vertex, _fact}), do: true
 end

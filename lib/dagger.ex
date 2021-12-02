@@ -51,33 +51,50 @@ defmodule Dagger do
     Rule
   }
 
+  defp maybe_expand_captured_function(condition, context) when is_list(condition) do
+    Enum.map(condition, &maybe_expand_captured_function(&1, context))
+  end
+
+  defp maybe_expand_captured_function({:&, _, [{:/, _, _}]} = captured_function_ast, context) do
+    Macro.prewalk(captured_function_ast, fn
+      {:__aliases__, _meta, _aliases} = alias_ast ->
+        Macro.expand(alias_ast, context)
+
+      ast_otherwise ->
+        ast_otherwise
+    end)
+  end
+
+  defp maybe_expand_captured_function(condition, _context), do: condition
+
   @doc """
   Defines a rule with specific key value params.
   """
   defmacro rule(opts) when is_list(opts) do
-    rule_name = Keyword.get(opts, :name) || raise ArgumentError, "Defining a rule requires a name"
+    rule_name = Keyword.get(opts, :name)
 
-    condition = Keyword.get(opts, :condition) || (&Steps.always_true/1)
+    # || (&Steps.always_true/1)
+    condition = Keyword.get(opts, :condition) |> maybe_expand_captured_function(__CALLER__)
 
     reaction =
       Keyword.get(opts, :reaction) || raise ArgumentError, "Defining a rule requires a reaction"
 
     description = Keyword.get(opts, :description)
 
-    expression = [{condition, reaction}]
+    expression = {condition, reaction}
 
     arity = Steps.arity_of(reaction)
 
     quote bind_quoted: [
-            expression: expression,
+            expression: Macro.escape(expression),
             description: description,
             arity: arity,
             rule_name: rule_name
           ] do
-      Kernel.struct!(Dagger.Workflow.Rule,
-        name: to_string(rule_name),
+      Rule.new(
+        expression,
         arity: arity,
-        expression: expression,
+        name: rule_name,
         description: description
       )
     end
@@ -88,26 +105,18 @@ defmodule Dagger do
   @doc """
   Defines a Rule with an anonymous function and additional options.
   """
-  defmacro rule({:fn, _meta, clauses}, opts) do
-    rule_name = Keyword.get(opts, :name) || raise ArgumentError, "Defining a rule requires a name"
+  defmacro rule({:fn, _meta, _clauses} = expression, opts) do
+    rule_name = Keyword.get(opts, :name)
     description = Keyword.get(opts, :description)
 
-    IO.inspect(clauses, label: "clauses")
-    IO.inspect(opts, label: "opts")
-
-    arity = Steps.arity_of(clauses) |> IO.inspect(label: "arity of anonymous function rule")
-    expressions = Enum.map(clauses, &expression_of_clauses/1) |> IO.inspect(label: "expressions")
-
     quote bind_quoted: [
-            expressions: Macro.escape(expressions),
-            arity: arity,
+            expression: Macro.escape(expression),
             description: description,
             rule_name: rule_name
           ] do
-      Kernel.struct!(Dagger.Workflow.Rule,
-        name: to_string(rule_name),
-        arity: arity,
-        expression: expressions,
+      Rule.new(
+        expression,
+        name: rule_name,
         description: description
       )
     end
@@ -126,61 +135,26 @@ defmodule Dagger do
               [
                 {:/, _arity_meta,
                  [
-                   {{:., _dot_meta, [{:__aliases__, aliasing_opts, aliases}, function_name]},
+                   {{:., _dot_meta, [{:__aliases__, _aliasing_opts, _aliases}, _function_name]},
                     _dot_opts, _dot_etc}
-                   | [arity]
+                   | [_arity]
                  ]}
-              ]} = _captured_function,
+              ]} = expression,
              opts
            ) do
-    rule_name = Keyword.get(opts, :name) || raise ArgumentError, "Defining a rule requires a name"
+    rule_name = Keyword.get(opts, :name)
     description = Keyword.get(opts, :description)
 
-    # IO.inspect(captured_function, label: "captured_function")
-    IO.inspect(aliasing_opts, label: "aliasing_opts")
-    # IO.inspect(aliases, label: "aliases")
-    # IO.inspect(function_name, label: "function_name")
-    # IO.inspect(dot_opts, label: "dot_opts")
-    # IO.inspect(arity, label: "arity")
-    # IO.inspect(opts, label: "opts")
-
-    # IO.inspect(__ENV__, label: "env", limit: :infinity, printable_limit: :infinity)
-    # IO.inspect(__CALLER__, label: "caller", limit: :infinity, printable_limit: :infinity)
-    IO.inspect(__CALLER__.context_modules, label: "context_modules")
-
-    root_module = Keyword.get(aliasing_opts, :counter) |> elem(0)
-
-    captured_function_module_string =
-      [root_module | aliases]
-      |> Enum.map(fn module ->
-        module_string = to_string(module)
-        String.replace(module_string, "Elixir.", "")
-      end)
-      |> Enum.uniq()
-      |> IO.inspect(label: "modules to join")
-      |> Enum.join(".")
-
-    captured_function_module =
-      "Elixir.#{captured_function_module_string}"
-      |> String.to_atom()
-      |> IO.inspect(label: "captured_function_module")
-
-    with {:ok, function_ast} <- fetch_ast(captured_function_module, function_name) do
-      expression = expression_of_clauses(function_ast)
-
-      quote bind_quoted: [
-              expression: Macro.escape(expression),
-              description: description,
-              arity: arity,
-              rule_name: rule_name
-            ] do
-        Kernel.struct!(Dagger.Workflow.Rule,
-          name: to_string(rule_name),
-          expression: expression,
-          description: description,
-          arity: arity
-        )
-      end
+    quote bind_quoted: [
+            expression: Macro.escape(expression),
+            description: description,
+            rule_name: rule_name
+          ] do
+      Rule.new(
+        expression,
+        name: rule_name,
+        description: description
+      )
     end
   end
 
@@ -189,46 +163,6 @@ defmodule Dagger do
     IO.inspect(opts, label: "opts")
 
     func
-  end
-
-  defp expression_of_clauses({:->, _meta, [lhs, rhs]}) do
-    IO.inspect(lhs, label: "lhs anon")
-    IO.inspect(rhs, label: "rhs anon")
-    {lhs, rhs}
-  end
-
-  defp expression_of_clauses({:->, _meta, [[], rhs]}) do
-    {&Steps.always_true/1, rhs}
-  end
-
-  defp expression_of_clauses(clauses) when is_list(clauses) do
-    clauses
-    |> Enum.map(&expression_of_clauses/1)
-    |> List.flatten()
-  end
-
-  defp expression_of_clauses({:def, _meta, [{_function_name, _clause_meta, lhs}, [do: rhs]]}) do
-    IO.inspect(lhs, label: "lhs named")
-    IO.inspect(rhs, label: "rhs named")
-    {lhs, rhs}
-  end
-
-  defp fetch_ast(module, function_name) do
-    with {_, accumulation} <-
-           module.__info__(:compile)[:source]
-           |> to_string()
-           |> File.read!()
-           |> Code.string_to_quoted!()
-           |> Macro.prewalk([], fn
-             matching_fun = {:def, _, [{^function_name, _, _} | _]}, acc ->
-               matching_fun |> IO.inspect(label: "matching function found")
-               {matching_fun, [matching_fun | acc]}
-
-             segment, acc ->
-               {segment, acc}
-           end) do
-      {:ok, accumulation}
-    end
   end
 
   def workflow(opts \\ []) do

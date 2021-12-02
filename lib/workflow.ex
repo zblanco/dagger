@@ -305,8 +305,9 @@ defmodule Dagger.Workflow do
     Fact,
     Activation,
     Agenda,
-    Runnable,
+    # Runnable,
     Condition,
+    Conjunction,
     Root
   }
 
@@ -343,8 +344,12 @@ defmodule Dagger.Workflow do
   end
 
   def new(params) when is_list(params) do
+    flow =
+      Graph.new(vertex_identifier: &Steps.vertex_id_of/1)
+      |> Graph.add_vertex(root(), :root)
+
     struct!(__MODULE__, params)
-    |> Map.put(:flow, Graph.new() |> Graph.add_vertex(root(), :root))
+    |> Map.put(:flow, flow)
     |> Map.put(:activations, %{})
     |> Map.put(:agenda, Agenda.new())
   end
@@ -427,7 +432,7 @@ defmodule Dagger.Workflow do
   end
 
   @doc """
-  For a new set of inputs, `plan/2` prepares the workflow agenda for the next cycle of reactions by
+  For a new set of inputs, `plan/2` prepares the workflow agenda for the next set of reactions by
   matching through left-hand-side conditions in the workflow network.
 
   For an inference engine's match -> select -> execute phase, this is the match phase.
@@ -435,6 +440,9 @@ defmodule Dagger.Workflow do
   Dagger Workflow evaluation is forward chaining meaning from the root of the graph it starts
     by evaluating the direct children of the root node. If the workflow has any sort of
     conditions (from rules, etc) these conditions are prioritized in the agenda for the next cycle.
+
+  Plan will always match through a single level of nodes and identify the next runnable activations
+  available.
   """
   def plan(%__MODULE__{} = wrk, %Fact{} = fact) do
     Activation.activate(root(), wrk, fact)
@@ -450,9 +458,12 @@ defmodule Dagger.Workflow do
     plan(wrk, Fact.new(value: raw_fact))
   end
 
+  @doc """
+  `plan/1` will, for all next left hand side / match phase runnables, activate the next layer - preparing the next layer if necessary.
+  """
   def plan(%__MODULE__{} = wrk) do
     wrk
-    |> next_runnables()
+    |> next_match_runnables()
     |> Enum.reduce(wrk, fn {node, fact}, wrk ->
       Activation.activate(node, wrk, fact)
     end)
@@ -465,18 +476,58 @@ defmodule Dagger.Workflow do
 
   Goal? To determine if the workflow is runnable once terminated to only Step runnables.
   """
-  def plan_eagerly(%__MODULE__{} = wrk, %Fact{} = input_fact) do
-    wrk = plan(wrk, input_fact)
+  def plan_eagerly(%__MODULE__{} = workflow, %Fact{} = input_fact) do
+    # wrk = plan(workflow, input_fact)
 
-    if Map.has_key?(wrk.activations, input_fact.hash) do
-      plan(wrk)
-    else
-      wrk
-    end
+    # wrk =
+    workflow
+    |> plan(input_fact)
+    |> activate_through_possible_matches()
+
+    # wrk
+    # |> next_match_runnables()
+    # |> Enum.reduce_while(wrk, fn _runnable, wrk ->
+    #   wrk = plan(wrk)
+
+    #   if Agenda.any_match_phase_runnables?(wrk.agenda) do
+    #     {:cont, plan(wrk)}
+    #   else
+    #     {:halt, wrk}
+    #   end
+    # end)
   end
 
   def plan_eagerly(%__MODULE__{} = wrk, raw_fact) do
     plan_eagerly(wrk, Fact.new(value: raw_fact))
+  end
+
+  defp activate_through_possible_matches(wrk) do
+    activate_through_possible_matches(
+      wrk,
+      next_match_runnables(wrk),
+      Agenda.any_match_phase_runnables?(wrk.agenda)
+    )
+  end
+
+  defp activate_through_possible_matches(
+         wrk,
+         next_match_runnables,
+         _any_match_phase_runnables? = true
+       ) do
+    Enum.reduce(next_match_runnables, wrk, fn {node, fact}, wrk ->
+      Activation.activate(node, wrk, fact)
+      |> activate_through_possible_matches()
+    end)
+  end
+
+  defp activate_through_possible_matches(
+         wrk,
+         _match_runnables,
+         _any_match_phase_runnables? = false
+       ) do
+
+    # IO.inspect(conditions(wrk), label: "possible conditions")
+    wrk
   end
 
   def is_runnable?(%__MODULE__{agenda: agenda}) do
@@ -494,10 +545,15 @@ defmodule Dagger.Workflow do
         %__MODULE__{activations: activations, facts: facts} = wrk,
         %Fact{value: :satisfied, ancestry: {condition_hash, fact_hash}} = fact
       ) do
+    activations_for_fact =
+      activations
+      |> Map.get(fact_hash, MapSet.new([condition_hash]))
+      |> MapSet.put(condition_hash)
+
     %__MODULE__{
       wrk
       | # do we ever want the inverse hash table (cond_hash, set<fact_hashe>) or both?
-        activations: Map.put(activations, fact_hash, MapSet.new([condition_hash])),
+        activations: Map.put(activations, fact_hash, activations_for_fact),
         facts: [fact | facts]
     }
   end
@@ -551,6 +607,8 @@ defmodule Dagger.Workflow do
   """
   def next_runnables(%__MODULE__{agenda: agenda}), do: Agenda.next_runnables(agenda)
 
+  def next_match_runnables(%__MODULE__{agenda: agenda}), do: Agenda.next_match_runnables(agenda)
+
   def next_steps(%__MODULE__{flow: flow}, parent_step) do
     next_steps(flow, parent_step)
   end
@@ -570,8 +628,96 @@ defmodule Dagger.Workflow do
         %__MODULE__{} = workflow,
         %Rule{} = rule
       ) do
+    IO.inspect(rule)
     workflow_of_rule = Dagger.Flowable.to_workflow(rule)
     merge(workflow, workflow_of_rule)
+  end
+
+  @doc """
+  Includes a rule with many conditions bound by the AND conjunction in the left hand side / match.
+
+  Dagger compiles rules with n conditions like so
+
+  ```
+  root --> arity_check --n-> condition(s) --n-> conjunction --> reaction
+  ```
+
+  This allows common conditionals among many rules to be checked only once for a given fact.
+
+  A conjunction activates during a match phase by checking if all its required conditions have been satisfied.
+
+  """
+  def with_rule(
+        %__MODULE__{flow: flow} = workflow,
+        [%Condition{} = a_condition | _more_conditions] = conditions,
+        %Step{} = reaction_step
+      ) do
+    unless Enum.count(conditions) == 1 do
+      arity_check = Steps.is_of_arity?(a_condition.arity)
+      arity_condition = Condition.new(arity_check)
+
+      conjunction = Conjunction.new(conditions)
+
+      # alpha =
+      #   unless Map.has_key?(alpha, hash_of_activations) do
+      #     Map.put(alpha, hash_of_activations, MapSet.new([reaction_step.hash]))
+      #   else
+      #     reaction_hash_set = Map.get(alpha, hash_of_activations)
+      #     Map.put(alpha, hash_of_activations, MapSet.put(reaction_hash_set, reaction_step.hash))
+      #   end
+      # the alpha network's purpose would be to cheaply find the rhs of sets of conditions
+      # can we implement the alpha within the graph or do we want a separate hash map?
+      # there's a space or time trade-off here where the time is avoided by storing the hash map under map lookup instead of
+      # filtering through in_neighbor hashes to include only conditions of concern.
+      # alternatively maybe the conjunction
+
+      # Add the arity check under the root
+      # Add the conjunction without edges (for now)
+      flow =
+        flow
+        |> Graph.add_vertex(arity_condition, [
+          arity_condition.hash,
+          "is_of_arity_#{a_condition.arity}"
+        ])
+        |> Graph.add_edge(root(), arity_condition, label: {:root, arity_condition.hash})
+        |> Graph.add_vertex(conjunction, [
+          conjunction.hash,
+          "conjunction : #{conditions |> Enum.map(& &1.hash) |> Enum.join(" AND ")}"
+        ])
+
+      # Add the conditions beneath the arity check
+      # Connect the conditions to the conjunction
+      flow =
+        Enum.reduce(conditions, flow, fn condition, flow ->
+          flow
+          |> Graph.add_vertex(condition, [condition.hash, function_name(condition.work)])
+          |> Graph.add_edge(arity_condition, condition,
+            label: {"is_of_arity_#{condition.arity}", condition.hash}
+          )
+          |> Graph.add_edge(condition, conjunction, label: :and)
+        end)
+
+      # Finally add the reaction and connect it to the conjunction above
+      flow =
+        flow
+        |> Graph.add_vertex(reaction_step, [
+          reaction_step.hash,
+          reaction_step.name,
+          function_name(reaction_step.work)
+        ])
+        |> Graph.add_edge(conjunction, reaction_step)
+
+      # to satisfy for a set of conditions we need a fact indicating satisfaction of all conditions
+      # set(hashes_of_conditions)
+
+      # for n conditions being added to a workflow
+      # place guards under arity check condition
+      # setup join nodes?
+
+      %__MODULE__{workflow | flow: flow}
+    else
+      with_rule(workflow, a_condition, reaction_step)
+    end
   end
 
   def with_rule(
@@ -658,6 +804,10 @@ defmodule Dagger.Workflow do
     add_step(workflow, %Root{}, child_step)
   end
 
+  def add_step(%__MODULE__{} = workflow, child_step) when is_function(child_step) do
+    add_step(workflow, %Root{}, Step.new(work: child_step))
+  end
+
   @doc """
   Adds a dependent step to some other step in a workflow by name.
 
@@ -702,6 +852,10 @@ defmodule Dagger.Workflow do
   """
   def steps(%__MODULE__{flow: flow}) do
     Enum.filter(Graph.vertices(flow), &match?(%Step{}, &1))
+  end
+
+  def conditions(%__MODULE__{flow: flow}) do
+    Enum.filter(Graph.vertices(flow), &match?(%Condition{}, &1))
   end
 
   # def add_workflow(%__MODULE__{flow: flow} = parent_workflow, parent_connector_step_or_hash_or_step_name, %__MODULE__{flow: child_flow} = child_workflow) do

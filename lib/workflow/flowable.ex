@@ -3,5 +3,50 @@ defprotocol Dagger.Flowable do
   The Flowable protocol is implemented by datastructures which know how to become a Dagger Workflow
     by implementing the `to_workflow/1` transformation.
   """
+  @fallback_to_any true
   def to_workflow(flowable)
+end
+
+defimpl Dagger.Flowable, for: List do
+  alias Dagger.Workflow
+
+  def to_workflow([first_flowable | remaining_flowables]) do
+    Enum.reduce(remaining_flowables, Dagger.Flowable.to_workflow(first_flowable), fn flowable,
+                                                                                     wrk ->
+      Workflow.merge(wrk, Dagger.Flowable.to_workflow(flowable))
+    end)
+  end
+end
+
+defimpl Dagger.Flowable, for: Dagger.Workflow do
+  def to_workflow(wrk), do: wrk
+end
+
+defimpl Dagger.Flowable, for: Dagger.Workflow.Rule do
+  def to_workflow(rule), do: rule.workflow
+end
+
+defimpl Dagger.Flowable, for: Tuple do
+  alias Dagger.Workflow.Rule
+
+  def to_workflow({:fn, _meta, _clauses} = quoted_anonymous_function) do
+    Dagger.Flowable.to_workflow(Rule.new(quoted_anonymous_function))
+  end
+end
+
+defimpl Dagger.Flowable, for: Function do
+  alias Dagger.Workflow
+
+  def to_workflow(fun) do
+    fun |> Function.info(:name) |> Workflow.new() |> Workflow.add_step(fun)
+  end
+end
+
+defimpl Dagger.Flowable, for: Any do
+  alias Dagger.Workflow
+
+  def to_workflow(anything_else) do
+    work = fn _anything -> anything_else end
+    :erlang.phash2(work) |> Workflow.new() |> Workflow.add_step(work)
+  end
 end

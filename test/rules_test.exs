@@ -12,7 +12,9 @@ defmodule RulesTest do
     def new_potato(_), do: :potato
 
     def potato_baker(:potato), do: :baked_potato
-    def potato_baker("potato"), do: :baked_potato
+    def potato_baker("potato") do
+      :baked_potato
+    end
 
     def potato_transformer(_), do: :potato
 
@@ -113,7 +115,7 @@ defmodule RulesTest do
       ]
 
       assert Enum.all?(Enum.map(inputs, &Rule.check(always_fires_rule_arity_1, &1)))
-      assert not Enum.any?(Enum.map(inputs, &Rule.check(always_fires_rule_arity_0, &1)))
+      assert Enum.all?(Enum.map(inputs, &Rule.check(always_fires_rule_arity_0, &1)) |> IO.inspect())
 
       assert Enum.all?(Enum.map(inputs, &(Rule.run(always_fires_rule_arity_1, &1) == :potato)))
 
@@ -138,7 +140,7 @@ defmodule RulesTest do
       |> IO.inspect(label: "runnable workflow")
 
       assert match?(%Rule{}, Dagger.rule(fn -> :potato end, name: "0_arity_rule"))
-      assert match?(%Rule{}, Dagger.rule(fn :potato -> :potato end, name: "1_arity_rule"))
+      assert match?(%Rule{}, Dagger.rule(fn :potato -> :potato end, name: "1_arity_rule") |> IO.inspect(label: "1_arity_rule"))
 
       assert match?(
                %Rule{},
@@ -181,6 +183,14 @@ defmodule RulesTest do
           reaction: "potato",
           name: "term_rule_with_captured_function_condition"
         )
+        |> IO.inspect(label: "term_rule_with_captured_function_condition")
+
+      assert Rule.check(term_rule_with_condition, "ham") == false
+      assert Rule.check(term_rule_with_condition, nil) == false
+      assert Rule.check(term_rule_with_condition, :potato) == true
+      assert Rule.check(term_rule_with_condition, "potato") == true
+      assert Rule.check(term_rule_with_condition, :potato) == true
+      assert Rule.run(term_rule_with_condition, :potato) == "potato"
 
       assert match?(%Rule{}, term_rule)
       assert Rule.check(term_rule, "anything") == true
@@ -193,15 +203,25 @@ defmodule RulesTest do
       rule_from_list_of_conditions =
         Dagger.rule(
           condition: [
+            # when this is true the rest are also always true (how to identify generic cases like this to reduce conditional evaluations when possible?)
             fn term -> term == "potato" end,
+            # generic guard - this check should end up child to the root in most cases
             &is_binary/1,
+            # stronger check than is_binary or not is_integer but still unecessary if is_potato? or anonymous variation passes
             fn term -> String.length(term) == 6 end,
+            # weaker check that just filters out integers - lower priority - can be avoided in most cases
             fn term when not is_integer(term) -> true end,
+            # captured function with 2 patterns
             &Examples.is_potato?/1
           ],
           reaction: "potato",
           name: "rule from list of conditions"
         )
+        |> IO.inspect(label: "rule_from_list_of_conditions")
+
+      # given arbitrary inputs assessing these rules - which rule when checked results in the most other conditions passing?
+      # assess that rule first if at all possible
+      # for child conditions with 100% commonality of a higher priority condition - when parent condition passes - we can also assume the child passes
 
       assert match?(%Rule{}, rule_from_list_of_conditions)
       assert Rule.check(rule_from_list_of_conditions, "potato") == true
@@ -210,7 +230,7 @@ defmodule RulesTest do
       assert Rule.check(rule_from_list_of_conditions, :potato) == false
 
       assert Rule.run(rule_from_list_of_conditions, "potato") == "potato"
-      assert Rule.run(rule_from_list_of_conditions, 42) == {:error, :condition_not_satisfied}
+      assert Rule.run(rule_from_list_of_conditions, 42) == {:error, :no_conditions_satisfied}
     end
 
     test "a rule's condition can be composed of many conditions built from guard clauses" do
@@ -234,7 +254,13 @@ defmodule RulesTest do
       assert Rule.run(rule_from_guard_logic, "potato") == "potato!!"
     end
 
-    test "a rule's condition can be composed of many conditions in the guard clause" do
+    test "a rule with more than one clause is invalid and results in an error" do
+      # todo change test to assert raising a custom exception
+      assert {:error, "A rule can have only one clause"} ==
+               Dagger.rule(fn
+                 :potato -> "potato"
+                 :tomato -> "tomato"
+               end)
     end
   end
 end

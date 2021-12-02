@@ -45,10 +45,9 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Condition do
         %Workflow{} = workflow,
         %Fact{} = fact
       ) do
-    IO.inspect(condition)
-    IO.inspect(fact)
-
-    with true <- try_to_run_work(condition.work, fact.value, condition.arity) do
+    with true <-
+           try_to_run_work(condition.work, fact.value, condition.arity)
+           |> IO.inspect(label: "did condition work pass for #{condition.hash} : #{fact.hash}?") do
       satisfied_fact = satisfied_fact(condition, fact)
 
       next_runnables =
@@ -68,9 +67,19 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Condition do
 
   def try_to_run_work(work, fact_value, arity) do
     try do
-      run_work(work, fact_value, arity)
+      run_work(work, fact_value, arity) |> IO.inspect(label: "run work attempt")
     rescue
-      _anything -> false
+      FunctionClauseError -> false
+    catch
+      true ->
+        true
+
+      any ->
+        IO.inspect(any,
+          label: "something other than FunctionClauseError happened in try_to_run_work/3"
+        )
+
+        false
     end
   end
 
@@ -127,5 +136,46 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Step do
     |> Workflow.log_fact(result_fact)
     |> Workflow.add_to_agenda(next_runnables)
     |> Workflow.prune_activated_runnable(step, fact)
+  end
+end
+
+defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Conjunction do
+  alias Dagger.Workflow
+
+  alias Dagger.Workflow.{
+    Fact,
+    Conjunction
+  }
+
+  def activate(
+        %Conjunction{} = conj,
+        %Workflow{} = workflow,
+        %Fact{} = fact
+      ) do
+    IO.puts("hey we're trying out the conjunction")
+
+    satisfied_conditions =
+      Map.get(workflow.activations, fact.hash) |> IO.inspect(label: "activations so far")
+
+    IO.inspect(conj.condition_hashes, label: "required to activate #{conj.hash}")
+
+    if Enum.all?(conj.condition_hashes, &(&1 in satisfied_conditions)) do
+      IO.inspect(conj.hash, label: "is satisfied")
+
+      conjunction_satisfied_fact =
+        Fact.new(value: :satisfied, ancestry: {conj.hash, fact.hash}, runnable: {conj, fact})
+
+      next_runnables =
+        workflow
+        |> Workflow.next_steps(conj)
+        |> Enum.map(&{&1, fact})
+
+      workflow
+      |> Workflow.log_fact(conjunction_satisfied_fact)
+      |> Workflow.add_to_agenda(next_runnables)
+      |> Workflow.prune_activated_runnable(conj, fact)
+    else
+      Workflow.prune_activated_runnable(workflow, conj, fact)
+    end
   end
 end
