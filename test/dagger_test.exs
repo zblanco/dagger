@@ -59,44 +59,44 @@ defmodule DaggerTest do
       assert Rule.run(some_rule, 42) == "fourty two"
     end
 
-    test "an anonymous function rule with multiple clauses is also valid" do
-      rule =
-        Dagger.rule(
-          fn
-            :potato -> "potato!"
-            :tomato -> "tomato!"
-          end,
-          name: "rule1"
-        )
-        |> IO.inspect(label: "anonymous function rule")
+    # test "an anonymous function rule with multiple clauses is also valid" do
+    #   rule =
+    #     Dagger.rule(
+    #       fn
+    #         :potato -> "potato!"
+    #         :tomato -> "tomato!"
+    #       end,
+    #       name: "rule1"
+    #     )
+    #     |> IO.inspect(label: "anonymous function rule")
 
-      wrk = Dagger.Flowable.to_workflow(rule) |> IO.inspect()
+    #   wrk = Dagger.Flowable.to_workflow(rule) |> IO.inspect()
 
-      assert Enum.all?(
-               wrk
-               |> Workflow.steps()
-               |> Enum.reject(&match?(%Dagger.Workflow.Step{}, &1)),
-               &(&1.arity == 1)
-             )
+    #   assert Enum.all?(
+    #            wrk
+    #            |> Workflow.steps()
+    #            |> Enum.reject(&match?(%Dagger.Workflow.Step{}, &1)),
+    #            &(&1.arity == 1)
+    #          )
 
-      assert match?(%Rule{}, rule)
-      assert Rule.check(rule, :potato) == true
-      assert Rule.check(rule, :tomato) == true
-      assert Rule.run(rule, :potato) == "potato!"
-      assert Rule.run(rule, :tomato) == "tomato!"
-    end
+    #   assert match?(%Rule{}, rule)
+    #   assert Rule.check(rule, :potato) == true
+    #   assert Rule.check(rule, :tomato) == true
+    #   assert Rule.run(rule, :potato) == "potato!"
+    #   assert Rule.run(rule, :tomato) == "tomato!"
+    # end
 
-    test "a valid rule can be created from a named function with multiple clauses" do
-      rule =
-        Dagger.rule(&Examples.potato_baker/1, name: "rule1")
-        |> IO.inspect(label: "named function rule")
+    # test "a valid rule can be created from a named function with multiple clauses" do
+    #   rule =
+    #     Dagger.rule(&Examples.potato_baker/1, name: "rule1")
+    #     |> IO.inspect(label: "named function rule")
 
-      assert match?(%Rule{}, rule)
-      assert Rule.check(rule, :potato) == true
-      assert Rule.check(rule, "potato") == true
-      assert Rule.run(rule, :potato) == :baked_potato
-      assert Rule.run(rule, "potato") == :baked_potato
-    end
+    #   assert match?(%Rule{}, rule)
+    #   assert Rule.check(rule, :potato) == true
+    #   assert Rule.check(rule, "potato") == true
+    #   assert Rule.run(rule, :potato) == :baked_potato
+    #   assert Rule.run(rule, "potato") == :baked_potato
+    # end
 
     test "a valid rule can be created from functions an arity > 1" do
       rule =
@@ -116,30 +116,30 @@ defmodule DaggerTest do
       assert Rule.run(rule, [2, 90]) == 180
     end
 
-    test "a valid rule can be created from functions an arity > 1 and many clauses" do
-      rule_with_many_clauses =
-        Dagger.rule(
-          fn
-            fee, fi, fo when is_integer(fee) and is_integer(fi) and is_integer(fo) ->
-              :all_integers
+    # test "a valid rule can be created from functions an arity > 1 and many clauses" do
+    #   rule_with_many_clauses =
+    #     Dagger.rule(
+    #       fn
+    #         fee, fi, fo when is_integer(fee) and is_integer(fi) and is_integer(fo) ->
+    #           :all_integers
 
-            fee, fi, fo when is_binary(fee) and is_binary(fi) and is_binary(fo) ->
-              :all_binaries
-          end,
-          name: "all-int-or-all-binary?"
-        )
+    #         fee, fi, fo when is_binary(fee) and is_binary(fi) and is_binary(fo) ->
+    #           :all_binaries
+    #       end,
+    #       name: "all-int-or-all-binary?"
+    #     )
 
-      assert match?(%Rule{}, rule_with_many_clauses)
-      assert Rule.check(rule_with_many_clauses, :potato) == false
-      assert Rule.check(rule_with_many_clauses, 10) == false
-      assert Rule.check(rule_with_many_clauses, [1, 2, 3]) == true
-      assert Rule.check(rule_with_many_clauses, [1, 2, 3, 4]) == false
-      assert Rule.check(rule_with_many_clauses, [1, 2, "3"]) == false
-      assert Rule.check(rule_with_many_clauses, ["1", "2", "3"]) == true
+    #   assert match?(%Rule{}, rule_with_many_clauses)
+    #   assert Rule.check(rule_with_many_clauses, :potato) == false
+    #   assert Rule.check(rule_with_many_clauses, 10) == false
+    #   assert Rule.check(rule_with_many_clauses, [1, 2, 3]) == true
+    #   assert Rule.check(rule_with_many_clauses, [1, 2, 3, 4]) == false
+    #   assert Rule.check(rule_with_many_clauses, [1, 2, "3"]) == false
+    #   assert Rule.check(rule_with_many_clauses, ["1", "2", "3"]) == true
 
-      assert Rule.run(rule_with_many_clauses, [1, 2, 3]) == :all_integers
-      assert Rule.run(rule_with_many_clauses, ["1", "2", "3"]) == :all_binaries
-    end
+    #   assert Rule.run(rule_with_many_clauses, [1, 2, 3]) == :all_integers
+    #   assert Rule.run(rule_with_many_clauses, ["1", "2", "3"]) == :all_binaries
+    # end
 
     # test "returns an argument error when multiple clauses are provided" do
     #   assert_compile_time_raise(

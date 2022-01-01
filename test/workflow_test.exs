@@ -174,20 +174,20 @@ defmodule WorkflowTest do
       )
     end
 
-    test "adding a step" do
-    end
+    # test "adding a step" do
+    # end
 
-    test "adding steps to other steps" do
-    end
+    # test "adding steps to other steps" do
+    # end
 
-    test "adding an existing step to another existing step makes no changes i.e. idempotency" do
-    end
+    # test "adding an existing step to another existing step makes no changes i.e. idempotency" do
+    # end
 
-    test "adding rules" do
-    end
+    # test "adding rules" do
+    # end
 
-    test "adding accumulators" do
-    end
+    # test "adding accumulators" do
+    # end
   end
 
   describe "left hand side / match phase evaluation" do
@@ -199,7 +199,6 @@ defmodule WorkflowTest do
             Dagger.rule(
               fn
                 :potato -> "potato!"
-                :tomato -> "tomato!"
               end,
               name: "rule1"
             ),
@@ -227,7 +226,6 @@ defmodule WorkflowTest do
             Dagger.rule(
               fn
                 :potato -> "potato!"
-                :tomato -> "tomato!"
               end,
               name: "rule1"
             ),
