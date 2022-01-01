@@ -296,37 +296,37 @@ defmodule WorkflowTest do
     end
   end
 
-  describe "rules" do
-    setup [:setup_test_pipelines]
+  # describe "rules" do
+  #   setup [:setup_test_pipelines]
 
-    test "construction with new/1" do
-      assert false
-    end
+  #   test "construction with new/1" do
+  #     assert false
+  #   end
 
-    test "conditions must be functions" do
-      assert false
-    end
+  #   test "conditions must be functions" do
+  #     assert false
+  #   end
 
-    test "a rule's condition must return a boolean" do
-      assert false
-    end
+  #   test "a rule's condition must return a boolean" do
+  #     assert false
+  #   end
 
-    test "a rule's reaction always returns a fact" do
-      assert false
-    end
-  end
+  #   test "a rule's reaction always returns a fact" do
+  #     assert false
+  #   end
+  # end
 
-  describe "workflow composition" do
-    setup [:setup_test_pipelines]
+  # describe "workflow composition" do
+  #   setup [:setup_test_pipelines]
 
-    test "a workflow can be merged into another workflow" do
-      assert false
-    end
+  #   test "a workflow can be merged into another workflow" do
+  #     assert false
+  #   end
 
-    test "a stateless pipeline workflow can be attached to another workflow as a dependent step" do
-      assert false
-    end
-  end
+  #   test "a stateless pipeline workflow can be attached to another workflow as a dependent step" do
+  #     assert false
+  #   end
+  # end
 
   describe "use cases" do
     setup [:setup_test_pipelines]

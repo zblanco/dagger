@@ -12,6 +12,7 @@ defmodule RulesTest do
     def new_potato(_), do: :potato
 
     def potato_baker(:potato), do: :baked_potato
+
     def potato_baker("potato") do
       :baked_potato
     end
@@ -115,7 +116,11 @@ defmodule RulesTest do
       ]
 
       assert Enum.all?(Enum.map(inputs, &Rule.check(always_fires_rule_arity_1, &1)))
-      assert Enum.all?(Enum.map(inputs, &Rule.check(always_fires_rule_arity_0, &1)) |> IO.inspect())
+
+      assert Enum.all?(
+               Enum.map(inputs, &Rule.check(always_fires_rule_arity_0, &1))
+               |> IO.inspect()
+             )
 
       assert Enum.all?(Enum.map(inputs, &(Rule.run(always_fires_rule_arity_1, &1) == :potato)))
 
@@ -140,7 +145,12 @@ defmodule RulesTest do
       |> IO.inspect(label: "runnable workflow")
 
       assert match?(%Rule{}, Dagger.rule(fn -> :potato end, name: "0_arity_rule"))
-      assert match?(%Rule{}, Dagger.rule(fn :potato -> :potato end, name: "1_arity_rule") |> IO.inspect(label: "1_arity_rule"))
+
+      assert match?(
+               %Rule{},
+               Dagger.rule(fn :potato -> :potato end, name: "1_arity_rule")
+               |> IO.inspect(label: "1_arity_rule")
+             )
 
       assert match?(
                %Rule{},

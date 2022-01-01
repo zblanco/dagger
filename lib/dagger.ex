@@ -90,7 +90,7 @@ defmodule Dagger do
             description: description,
             arity: arity,
             rule_name: rule_name,
-            context: Macro.escape(__CALLER__),
+            context: Macro.escape(__CALLER__)
           ] do
       Rule.new(
         expression,
@@ -115,7 +115,7 @@ defmodule Dagger do
             expression: Macro.escape(expression),
             description: description,
             rule_name: rule_name,
-            context: Macro.escape(__CALLER__),
+            context: Macro.escape(__CALLER__)
           ] do
       Rule.new(
         expression,
@@ -153,7 +153,7 @@ defmodule Dagger do
             expression: Macro.escape(expression),
             description: description,
             rule_name: rule_name,
-            context: Macro.escape(__CALLER__),
+            context: Macro.escape(__CALLER__)
           ] do
       Rule.new(
         expression,

@@ -247,13 +247,24 @@ defmodule Dagger.Workflow.Rule do
       new_workflow
       | flow:
           new_workflow.flow
-          |> Graph.add_edges([
-            {
-              Workflow.root(),
-              arity_condition
-            }
+          |> Graph.add_vertex(arity_condition, [
+            arity_condition.hash,
+            "is_of_arity_#{arity}"
           ])
+          |> Graph.add_edge(Workflow.root(), arity_condition, label: {:root, arity_condition.hash})
     }
+
+    #   %Workflow{
+    #   new_workflow
+    #   | flow:
+    #       new_workflow.flow
+    #       |> Graph.add_edges([
+    #         {
+    #           Workflow.root(),
+    #           arity_condition
+    #         }
+    #       ])
+    # }
 
     reaction = reaction_step_of_rhs(quoted_fun_expression, arity)
 
@@ -450,7 +461,8 @@ defmodule Dagger.Workflow.Rule do
 
         if Graph.out_degree(g, v) == 0 do
           IO.inspect(v, label: "leaf edge found")
-          {:next, [{v, reaction} | leaf_edges]}
+
+          {:next, [Graph.Edge.new(v, reaction, label: {v.hash, reaction.hash}) | leaf_edges]}
         else
           {:next, leaf_edges}
         end
@@ -482,8 +494,9 @@ defmodule Dagger.Workflow.Rule do
           ])
 
         condition, g ->
-          Graph.add_edge(
-            g,
+          g
+          |> Graph.add_vertex(condition, to_string(condition.hash))
+          |> Graph.add_edge(
             Graph.Edge.new(arity_condition, condition,
               label: {arity_condition.hash, condition.hash}
             )
@@ -494,6 +507,11 @@ defmodule Dagger.Workflow.Rule do
       wrk
       | flow:
           flow
+          |> Graph.add_vertex(reaction, [
+            reaction.hash,
+            reaction.name,
+            function_name(reaction.work)
+          ])
           |> Graph.add_edges(
             leaf_to_reaction_edges(flow, arity_condition, reaction)
             |> IO.inspect(label: "leaf_to_reaction_edges")
@@ -546,6 +564,10 @@ defmodule Dagger.Workflow.Rule do
               g
               |> Graph.add_vertex(lhs_of_or, to_string(lhs_of_or.hash))
               |> Graph.add_vertex(lhs_of_or, to_string(lhs_of_or.hash))
+              |> Graph.add_vertex(conjunction, [
+                conjunction.hash,
+                "conjunction : #{conditions |> Enum.map(& &1.hash) |> Enum.join(" AND ")}"
+              ])
               |> Graph.add_edges([
                 Graph.Edge.new(lhs_of_or, conjunction, label: {lhs_of_or.hash, conjunction.hash}),
                 Graph.Edge.new(rhs_of_or, conjunction, label: {rhs_of_or.hash, conjunction.hash})
@@ -553,22 +575,13 @@ defmodule Dagger.Workflow.Rule do
 
             condition, g ->
               g
+              |> Graph.add_vertex(conjunction, [
+                conjunction.hash,
+                "conjunction : #{conditions |> Enum.map(& &1.hash) |> Enum.join(" AND ")}"
+              ])
               |> Graph.add_vertex(condition, condition.hash)
               |> Graph.add_edge(condition, conjunction, label: {condition.hash, conjunction.hash})
           end)
-
-        # wrk.flow
-
-        # |> Graph.add_edges(
-        #   Enum.map(conditions, fn
-        #     {lhs_of_or, rhs_of_or} = _or ->
-        #       [{lhs_of_or, conjunction}, {rhs_of_or, conjunction}]
-
-        #     condition ->
-        #       {condition, conjunction}
-        #   end)
-        #   |> List.flatten()
-        # )
     })
     |> Map.put(:possible_children, Map.put(possible_children, ast, conjunction))
   end
@@ -626,7 +639,5 @@ defmodule Dagger.Workflow.Rule do
     acc
   end
 
-  defp match_functions_of_lhs(term_otherwise) do
-    [{:fn, [], [{:->, [], [[term_otherwise], true]}]} |> Code.eval_quoted() |> elem(0)]
-  end
+  defp function_name(fun), do: Function.info(fun, :name) |> elem(1)
 end

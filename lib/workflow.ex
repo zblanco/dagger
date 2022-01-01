@@ -525,7 +525,6 @@ defmodule Dagger.Workflow do
          _match_runnables,
          _any_match_phase_runnables? = false
        ) do
-
     # IO.inspect(conditions(wrk), label: "possible conditions")
     wrk
   end
@@ -808,8 +807,6 @@ defmodule Dagger.Workflow do
     add_step(workflow, %Root{}, child_step)
   end
 
-
-
   @doc """
   Adds a dependent step to some other step in a workflow by name.
 
@@ -835,7 +832,9 @@ defmodule Dagger.Workflow do
       | flow:
           flow
           |> Graph.add_vertex(child_step, to_string(child_step.hash))
-          |> Graph.add_edge(parent_step, child_step, label: {to_string(parent_step.hash), to_string(child_step.hash)})
+          |> Graph.add_edge(parent_step, child_step,
+            label: {to_string(parent_step.hash), to_string(child_step.hash)}
+          )
     }
   end
 
