@@ -89,13 +89,15 @@ defmodule Dagger do
             expression: Macro.escape(expression),
             description: description,
             arity: arity,
-            rule_name: rule_name
+            rule_name: rule_name,
+            context: Macro.escape(__CALLER__),
           ] do
       Rule.new(
         expression,
         arity: arity,
         name: rule_name,
-        description: description
+        description: description,
+        context: context
       )
     end
   end
@@ -112,12 +114,14 @@ defmodule Dagger do
     quote bind_quoted: [
             expression: Macro.escape(expression),
             description: description,
-            rule_name: rule_name
+            rule_name: rule_name,
+            context: Macro.escape(__CALLER__),
           ] do
       Rule.new(
         expression,
         name: rule_name,
-        description: description
+        description: description,
+        context: context
       )
     end
   end
@@ -148,12 +152,14 @@ defmodule Dagger do
     quote bind_quoted: [
             expression: Macro.escape(expression),
             description: description,
-            rule_name: rule_name
+            rule_name: rule_name,
+            context: Macro.escape(__CALLER__),
           ] do
       Rule.new(
         expression,
         name: rule_name,
-        description: description
+        description: description,
+        context: context
       )
     end
   end

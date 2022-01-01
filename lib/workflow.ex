@@ -358,7 +358,7 @@ defmodule Dagger.Workflow do
     new(Map.to_list(params))
   end
 
-  defp root(), do: %Root{}
+  def root(), do: %Root{}
 
   # plan: cycle through a single phase of match/lhs/conditionals
   # plan_eagerly: cycle through matches until only step/rhs runnables are ready
@@ -800,13 +800,15 @@ defmodule Dagger.Workflow do
   @doc """
   Adds a step to the root of the workflow that is always evaluated with a new fact.
   """
-  def add_step(%__MODULE__{} = workflow, %Step{} = child_step) do
-    add_step(workflow, %Root{}, child_step)
-  end
-
   def add_step(%__MODULE__{} = workflow, child_step) when is_function(child_step) do
     add_step(workflow, %Root{}, Step.new(work: child_step))
   end
+
+  def add_step(%__MODULE__{} = workflow, child_step) do
+    add_step(workflow, %Root{}, child_step)
+  end
+
+
 
   @doc """
   Adds a dependent step to some other step in a workflow by name.
@@ -817,27 +819,27 @@ defmodule Dagger.Workflow do
 
   If you're just building a pipeline, dependent steps can be sufficient, however you might want Rules for conditional branching logic.
   """
-  def add_step(%__MODULE__{flow: flow} = workflow, %Root{}, %Step{} = child_step) do
+  def add_step(%__MODULE__{flow: flow} = workflow, %Root{}, %{} = child_step) do
     %__MODULE__{
       workflow
       | flow:
           flow
-          |> Graph.add_vertex(child_step, [child_step.hash, child_step.name])
+          |> Graph.add_vertex(child_step, child_step.hash)
           |> Graph.add_edge(%Root{}, child_step, label: {%Root{}, child_step.hash})
     }
   end
 
-  def add_step(%__MODULE__{flow: flow} = workflow, %Step{} = parent_step, %Step{} = child_step) do
+  def add_step(%__MODULE__{flow: flow} = workflow, %{} = parent_step, %{} = child_step) do
     %__MODULE__{
       workflow
       | flow:
           flow
-          |> Graph.add_vertex(child_step, [child_step.hash, child_step.name])
-          |> Graph.add_edge(parent_step, child_step, label: {parent_step.hash, child_step.hash})
+          |> Graph.add_vertex(child_step, to_string(child_step.hash))
+          |> Graph.add_edge(parent_step, child_step, label: {to_string(parent_step.hash), to_string(child_step.hash)})
     }
   end
 
-  def add_step(%__MODULE__{} = workflow, parent_step_name, %Step{} = child_step) do
+  def add_step(%__MODULE__{} = workflow, parent_step_name, child_step) do
     case get_step_by_name(workflow, parent_step_name) do
       {:ok, parent_step} ->
         add_step(workflow, parent_step, child_step)

@@ -180,7 +180,7 @@ defmodule WorkflowTest do
     test "adding steps to other steps" do
     end
 
-    test "adding an existing step to another existing step makes no changes" do
+    test "adding an existing step to another existing step makes no changes i.e. idempotency" do
     end
 
     test "adding rules" do

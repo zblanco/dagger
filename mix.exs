@@ -22,7 +22,7 @@ defmodule Dagger.MixProject do
   defp deps do
     [
       {:uuid, "~> 1.1"},
-      {:libgraph, github: "zblanco/libgraph", branch: "zw/injectable-vertex-identities"},
+      {:libgraph, github: "bitwalker/libgraph", branch: "main"},
       {:norm, "~> 0.10.2"},
       {:expreso, "~> 0.1.1"}
     ]

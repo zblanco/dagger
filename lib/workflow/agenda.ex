@@ -50,6 +50,7 @@ defmodule Dagger.Workflow.Agenda do
     Enum.any?(runnables, &is_match_runnable?/1)
   end
 
+  # can this question be answered by a protocol?
   defp is_match_runnable?({_key, {%Dagger.Workflow.Step{}, _fact}}), do: false
   defp is_match_runnable?({_key, {_any_other_vertex, _fact}}), do: true
   defp is_match_runnable?({%Dagger.Workflow.Step{}, _fact}), do: false

@@ -1,6 +1,6 @@
 %{
   "expreso": {:hex, :expreso, "0.1.1", "7165da175f14f55d1a88f474389b05e7697f215c0c65423beb09d02db9babb95", [:mix], [], "hexpm", "6b1c83909111a74f93dadb62429da3abf2f256fe35523e909126dd5b476ff3c7"},
-  "libgraph": {:git, "https://github.com/zblanco/libgraph.git", "9b2bd32b949c41708b89b9dc2df5624c5f9c19e7", [branch: "zw/injectable-vertex-identities"]},
+  "libgraph": {:git, "https://github.com/bitwalker/libgraph.git", "180d7177cd8f19e62739bc8eb27f1174e63db74d", [branch: "main"]},
   "norm": {:hex, :norm, "0.10.4", "3243baed73db6c9b54175a8f473bdac20f311a2b39415e3de0a6d205df767492", [:mix], [], "hexpm", "51884375a00a6f0c7206612543e268435662808c817f787bb3b544617f6a9174"},
   "uuid": {:hex, :uuid, "1.1.8", "e22fc04499de0de3ed1116b770c7737779f226ceefa0badb3592e64d5cfb4eb9", [:mix], [], "hexpm", "c790593b4c3b601f5dc2378baae7efaf5b3d73c4c6456ba85759905be792f2ac"},
 }
