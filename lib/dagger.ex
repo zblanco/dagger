@@ -2,13 +2,13 @@ defmodule Dagger do
   @moduledoc """
   Dagger is a tool for modeling your workflows as data that can be composed together at runtime.
 
-  All Dagger constructs can be integrated into a Dagger.Workflow and evaluated lazily in concurrent contexts.
+  Dagger constructs can be integrated into a Dagger.Workflow and evaluated lazily in concurrent contexts.
 
-  Dagger Workflows are essentially a decorated dataflow graph (a DAG - "directed acyclic graph") of your code that can model your rules, pipelines, and state machines.
+  Dagger Workflows are a decorated dataflow graph (a DAG - "directed acyclic graph") of your code that can model your rules, pipelines, and state machines.
 
   Basic data flow dependencies such as in a pipeline are modeled as %Step{} structs (nodes/vertices) in the graph with directed edges (arrows) between steps.
 
-  Steps can be thought of as a sumple input -> output lambda function.
+  Steps can be thought of as a simple input -> output lambda function.
 
   As Facts are fed through a workflow, various steps are traversed to as needed and activated producing more Facts.
 
@@ -16,17 +16,17 @@ defmodule Dagger do
 
   Together this enables Dagger to express complex decision trees, finite state machines, data pipelines, and more.
 
-  The Dagger.Runnable protocol is what allows for extension of Dagger and composability of structures like Workflows, Steps, Rules, and Accumulators by allowing user defined structures to be integrated into a `Dagger.Workflow`.
+  The Dagger.Flowable protocol is what allows for extension of Dagger and composability of structures like Workflows, Steps, Rules, and Accumulators by allowing user defined structures to be integrated into a `Dagger.Workflow`.
 
-  See the [Workflow]() module for more information.
+  See the Dagger.Workflow module for more information.
 
-  This top level module provides high level functions and macros for building Dagger Runnables
+  This top level module provides high level functions and macros for building Dagger Flowables
     such as Steps, Rules, Workflows, and Accumulators.
 
   This core library is responsible for modeling Workflows with Steps, enforcing contracts of Step functions,
     and defining the contract of Runners used to execute Workflows.
 
-  Dagger was designed to be used custom process topologies and/or libraries such as GenStage, Broadway, and Flow.
+  Dagger was designed to be used with custom process topologies and/or libraries such as GenStage, Broadway, and Flow.
 
   Dagger is meant for dynamic runtime modification of a workflow where you might want to compose pieces of a workflow together.
 
@@ -41,7 +41,6 @@ defmodule Dagger do
   composition at runtime - Dagger may be the right tool for you.
 
   ## Installation and Setup
-
   """
   alias Dagger.Workflow
 

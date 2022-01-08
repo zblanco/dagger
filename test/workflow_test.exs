@@ -254,7 +254,6 @@ defmodule WorkflowTest do
             Dagger.rule(
               fn
                 :potato -> "potato!"
-                :tomato -> "tomato!"
               end,
               name: "rule1"
             ),

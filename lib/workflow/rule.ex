@@ -230,8 +230,6 @@ defmodule Dagger.Workflow.Rule do
          arity,
          context
        ) do
-    # we can't just get a set of conditions here -
-    # there may be conjunctions and multiple paths to the reaction
     arity_condition =
       arity
       |> Steps.is_of_arity?()
@@ -254,25 +252,7 @@ defmodule Dagger.Workflow.Rule do
           |> Graph.add_edge(Workflow.root(), arity_condition, label: {:root, arity_condition.hash})
     }
 
-    #   %Workflow{
-    #   new_workflow
-    #   | flow:
-    #       new_workflow.flow
-    #       |> Graph.add_edges([
-    #         {
-    #           Workflow.root(),
-    #           arity_condition
-    #         }
-    #       ])
-    # }
-
     reaction = reaction_step_of_rhs(quoted_fun_expression, arity)
-
-    IO.inspect(quoted_fun_expression, lable: "quoted_fun_expression")
-
-    # from the root ast node (when ast)
-    # at each step in the tree - a conjunction or 'or' may be found or a boolean expression / condition
-    # for a conjunction we need to get all its children
 
     lhs
     |> Macro.postwalker()

@@ -587,17 +587,42 @@ defmodule Dagger.Workflow do
   #   %__MODULE__{wrk | agenda: Agenda.next_cycle(wrk.agenda)}
   # end
 
+  @spec raw_reactions(Dagger.Workflow.t()) :: list(any())
   @doc """
-  Returns actual side effects of the workflow - i.e. facts resulting from the execution of a step.
+  Returns raw (output value) side effects of the workflow - i.e. facts resulting from the execution of a Dagger.Step
+  """
+  def raw_reactions(%__MODULE__{} = wrk) do
+    wrk
+    |> reactions()
+    |> Enum.map(& &1.value)
+  end
+
+  @spec reactions(Dagger.Workflow.t()) :: list(Dagger.Workflow.Fact.t())
+  @doc """
+  Returns raw (output value) side effects of the workflow - i.e. facts resulting from the execution of a Dagger.Step
   """
   def reactions(%__MODULE__{} = wrk) do
     wrk.facts
     |> Enum.filter(fn %Fact{} = fact ->
       fact.value != :satisfied and not is_nil(fact.ancestry)
     end)
-    |> Enum.map(& &1.value)
   end
 
+  @spec facts(Dagger.Workflow.t()) :: list(Dagger.Workflow.Fact.t())
+  @doc """
+  Lists facts produced in the workflow so far.
+  """
+  def facts(%__MODULE__{} = wrk), do: wrk.facts
+
+  @spec matches(Dagger.Workflow.t()) :: list(Dagger.Workflow.Fact.t())
+  def matches(%__MODULE__{} = wrk) do
+    wrk.facts
+    |> Enum.filter(fn %Fact{} = fact ->
+      fact.value == :satisfied and not is_nil(fact.ancestry)
+    end)
+  end
+
+  @spec next_runnables(Dagger.Workflow.t()) :: list({any(), Dagger.Workflow.Fact.t()})
   @doc """
   Returns a list of the next {node, fact} i.e "runnable" pairs ready for activation in the next cycle.
 
@@ -606,6 +631,10 @@ defmodule Dagger.Workflow do
   """
   def next_runnables(%__MODULE__{agenda: agenda}), do: Agenda.next_runnables(agenda)
 
+  @doc """
+  Returns the next lhs or match runnables i.e. the work, input pairs that can activate a condition or conjunction
+  for the next cycle.
+  """
   def next_match_runnables(%__MODULE__{agenda: agenda}), do: Agenda.next_match_runnables(agenda)
 
   def next_steps(%__MODULE__{flow: flow}, parent_step) do
@@ -873,7 +902,7 @@ defmodule Dagger.Workflow do
 
   def get_step_by_name(%__MODULE__{flow: flow}, step_name) do
     case flow
-         # we'll want map access time index on work function hashes to make this fast
+         # we'll want map access time index on work function hashes to make this fastk
          |> Graph.vertices()
          |> Enum.find(
            {:error, :step_not_found},
