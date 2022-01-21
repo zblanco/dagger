@@ -47,6 +47,7 @@ defmodule Dagger do
   alias Dagger.Workflow.{
     Step,
     Steps,
+    Accumulator,
     Rule
   }
 
@@ -180,12 +181,20 @@ defmodule Dagger do
     |> add_rules(rules)
   end
 
-  # def accumulator(opts \\ []) do
-  #   name = Keyword.get(opts, :name) || raise ArgumentError, "Defining an accumulator requires a name"
-  #   init = Keyword.get(opts, :init) || raise ArgumentError, "Defining an accumulator requires an initiator"
-  #   reducers = Keyword.get(opts, :reducers) || raise ArgumentError, "Defining an accumulator requires a list of reducers"
+  def accumulator(opts \\ []) do
+    init =
+      Keyword.get(opts, :init) ||
+        raise ArgumentError, "Defining an accumulator requires an initiator function or value"
 
-  # end
+    reducers =
+      Keyword.get(opts, :reducers) ||
+        raise ArgumentError, "Defining an accumulator requires a list of reducers"
+
+    Accumulator.new(
+      init: init,
+      reducers: reducers
+    )
+  end
 
   # defp init_rule(%Rule{} = init, _acc_name), do: init
   # defp init_rule(init, acc_name), do: Dagger.rule(init, name: "#{acc_name}-init")

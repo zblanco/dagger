@@ -278,12 +278,6 @@ defmodule Dagger.Workflow do
 
   Returns a :state_produced type fact.
 
-  ** should we enforce a fact protocol? **
-
-  Workflow.new()
-  |> Workflow.add_step(my_rule)
-
-
   ## Network layers
 
   %Root{}
@@ -662,125 +656,6 @@ defmodule Dagger.Workflow do
   end
 
   @doc """
-  Includes a rule with many conditions bound by the AND conjunction in the left hand side / match.
-
-  Dagger compiles rules with n conditions like so
-
-  ```
-  root --> arity_check --n-> condition(s) --n-> conjunction --> reaction
-  ```
-
-  This allows common conditionals among many rules to be checked only once for a given fact.
-
-  A conjunction activates during a match phase by checking if all its required conditions have been satisfied.
-
-  """
-  def with_rule(
-        %__MODULE__{flow: flow} = workflow,
-        [%Condition{} = a_condition | _more_conditions] = conditions,
-        %Step{} = reaction_step
-      ) do
-    unless Enum.count(conditions) == 1 do
-      arity_check = Steps.is_of_arity?(a_condition.arity)
-      arity_condition = Condition.new(arity_check)
-
-      conjunction = Conjunction.new(conditions)
-
-      # alpha =
-      #   unless Map.has_key?(alpha, hash_of_activations) do
-      #     Map.put(alpha, hash_of_activations, MapSet.new([reaction_step.hash]))
-      #   else
-      #     reaction_hash_set = Map.get(alpha, hash_of_activations)
-      #     Map.put(alpha, hash_of_activations, MapSet.put(reaction_hash_set, reaction_step.hash))
-      #   end
-      # the alpha network's purpose would be to cheaply find the rhs of sets of conditions
-      # can we implement the alpha within the graph or do we want a separate hash map?
-      # there's a space or time trade-off here where the time is avoided by storing the hash map under map lookup instead of
-      # filtering through in_neighbor hashes to include only conditions of concern.
-      # alternatively maybe the conjunction
-
-      # Add the arity check under the root
-      # Add the conjunction without edges (for now)
-      flow =
-        flow
-        |> Graph.add_vertex(arity_condition, [
-          arity_condition.hash,
-          "is_of_arity_#{a_condition.arity}"
-        ])
-        |> Graph.add_edge(root(), arity_condition, label: {:root, arity_condition.hash})
-        |> Graph.add_vertex(conjunction, [
-          conjunction.hash,
-          "conjunction : #{conditions |> Enum.map(& &1.hash) |> Enum.join(" AND ")}"
-        ])
-
-      # Add the conditions beneath the arity check
-      # Connect the conditions to the conjunction
-      flow =
-        Enum.reduce(conditions, flow, fn condition, flow ->
-          flow
-          |> Graph.add_vertex(condition, [condition.hash, function_name(condition.work)])
-          |> Graph.add_edge(arity_condition, condition,
-            label: {"is_of_arity_#{condition.arity}", condition.hash}
-          )
-          |> Graph.add_edge(condition, conjunction, label: :and)
-        end)
-
-      # Finally add the reaction and connect it to the conjunction above
-      flow =
-        flow
-        |> Graph.add_vertex(reaction_step, [
-          reaction_step.hash,
-          reaction_step.name,
-          function_name(reaction_step.work)
-        ])
-        |> Graph.add_edge(conjunction, reaction_step)
-
-      # to satisfy for a set of conditions we need a fact indicating satisfaction of all conditions
-      # set(hashes_of_conditions)
-
-      # for n conditions being added to a workflow
-      # place guards under arity check condition
-      # setup join nodes?
-
-      %__MODULE__{workflow | flow: flow}
-    else
-      with_rule(workflow, a_condition, reaction_step)
-    end
-  end
-
-  def with_rule(
-        %__MODULE__{flow: flow} = workflow,
-        %Condition{} = condition,
-        %Step{} = reaction_step
-      ) do
-    arity_check = Steps.is_of_arity?(condition.arity)
-    arity_condition = Condition.new(arity_check)
-
-    %__MODULE__{
-      workflow
-      | flow:
-          flow
-          |> Graph.add_vertex(arity_condition, [
-            arity_condition.hash,
-            "is_of_arity_#{condition.arity}"
-          ])
-          |> Graph.add_vertex(condition, [condition.hash, function_name(condition.work)])
-          |> Graph.add_vertex(reaction_step, [
-            reaction_step.hash,
-            reaction_step.name,
-            function_name(reaction_step.work)
-          ])
-          |> Graph.add_edge(root(), arity_condition, label: {:root, arity_condition.hash})
-          |> Graph.add_edge(arity_condition, condition,
-            label: {"is_of_arity_#{condition.arity}", condition.hash}
-          )
-          |> Graph.add_edge(condition, reaction_step, label: {condition.hash, reaction_step.hash})
-    }
-  end
-
-  defp function_name(fun), do: Function.info(fun, :name) |> elem(1)
-
-  @doc """
   Merges the second workflow into the first maintaining the name of the first.
   """
   def merge(%__MODULE__{flow: flow} = workflow, %__MODULE__{flow: flow2}) do
@@ -902,7 +777,7 @@ defmodule Dagger.Workflow do
 
   def get_step_by_name(%__MODULE__{flow: flow}, step_name) do
     case flow
-         # we'll want map access time index on work function hashes to make this fastk
+         # we'll want map access time index on work function hashes to make this fast
          |> Graph.vertices()
          |> Enum.find(
            {:error, :step_not_found},
@@ -932,37 +807,4 @@ defmodule Dagger.Workflow do
       add_rule(workflow, reducer)
     end)
   end
-
-  # defp workflow_hash(%__MODULE__{flow: flow} = workflow) do
-
-  # end
-
-  # defimpl Runnable do
-  #   alias Dagger.Workflow
-  #   alias Dagger.Workflow.{
-  #     Fact,
-  #     Step,
-  #     Steps,
-  #   }
-
-  #   # workflow + fact, worfklow + facts, workflow + raw_input, workflow + raw_inputs (list)
-
-  #   def runnable(%Workflow{} = wrk, %Fact{ancestry: {work_hash, _fact_hash}} = fact) do
-  #     next_steps = Workflow.next_steps(wrk, work_hash)
-  #   end
-
-  #   def runnable(%Workflow{} = wrk, facts) when is_list(facts) do
-
-  #   end
-
-  #   def runnable(%Workflow{} = wrk, fact_stream) do
-
-  #   end
-
-  #   # @spec run(Workflow.t(), fact :: term()) :: Workflow.t()
-  #   def run(%Workflow{} = wrk, %Fact{} = fact) do
-
-  #     wrk
-  #   end
-  # end
 end

@@ -38,26 +38,20 @@ defmodule Dagger.Workflow.Accumulator do
 
   ```
   """
-  alias Dagger.Workflow.{Rule, Fact}
+  alias Dagger.Workflow.Rule
 
   defstruct [
-    :name,
     # rule where the condition consumes a fact that isn't a `state_produced` of this accumulator and returns the initial `state_produced` fact.
     :init,
     # rules where the condition matches on an external fact and a state_produced fact of this accumulator.
     :reducers
   ]
 
-  @doc """
-  Initialize a new Accumulator with just an Initializer Rule.
+  def new(opts) do
+    __MODULE__
+    |> struct!(opts)
 
-  This results in only a single `state_produced` reaction which means you'll want to use `add_accumulator_rule/2` or use `new/2` to do anything interesting.
-
-  Initializer rules of an accumulator must have a condition reacting to an external fact.
-  In addition the initializer reactions must always return a `state_produced` fact.
-  """
-  def new(%Rule{} = init) do
-    %__MODULE__{init: init}
+    # |> normalize()
   end
 
   def new(%Rule{} = init, [] = reducers) do
@@ -65,27 +59,11 @@ defmodule Dagger.Workflow.Accumulator do
     %__MODULE__{init: init, reducers: reducers}
   end
 
-  def add_state_reactor_rule(
+  def add_reducer(
         %__MODULE__{reducers: [] = reducers} = accumulator,
         %Rule{} = state_reactor
       ) do
     # todo: validate state_reactors meet contract of an AND
-    %__MODULE__{accumulator | reducers: [reducers | state_reactor]}
-  end
-
-  defimpl Dagger.Flowable do
-    alias Dagger.Workflow.{Rule, Accumulator}
-    alias Dagger.Workflow
-
-    def to_workflow(%Accumulator{init: %Rule{} = init, reducers: reducers} = acc)
-        when is_list(reducers) do
-      Enum.reduce(
-        reducers,
-        Workflow.merge(Workflow.new(acc.name), Dagger.Flowable.to_workflow(init)),
-        fn reducer, wrk ->
-          Workflow.merge(wrk, Dagger.Flowable.to_workflow(reducer))
-        end
-      )
-    end
+    %__MODULE__{accumulator | reducers: [reducers | [state_reactor]]}
   end
 end

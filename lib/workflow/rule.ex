@@ -149,7 +149,7 @@ defmodule Dagger.Workflow.Rule do
     expression
     |> Steps.name_of_expression()
     |> Workflow.new()
-    |> Workflow.with_rule(condition, reaction)
+    |> workflow_from_rule(condition, reaction)
   end
 
   defp workflow_of_expression(
@@ -175,7 +175,7 @@ defmodule Dagger.Workflow.Rule do
     expression
     |> Steps.name_of_expression()
     |> Workflow.new()
-    |> Workflow.with_rule(condition, reaction)
+    |> workflow_from_rule(condition, reaction)
   end
 
   defp workflow_of_expression(
@@ -204,7 +204,7 @@ defmodule Dagger.Workflow.Rule do
     expression
     |> Steps.name_of_expression()
     |> Workflow.new()
-    |> Workflow.with_rule(conditions, reaction)
+    |> workflow_from_rule(conditions, reaction)
   end
 
   defp workflow_of_expression(
@@ -222,7 +222,7 @@ defmodule Dagger.Workflow.Rule do
     expression
     |> Steps.name_of_expression()
     |> Workflow.new()
-    |> Workflow.with_rule(conditions, reaction)
+    |> workflow_from_rule(conditions, reaction)
   end
 
   defp workflow_of_expression(
@@ -302,7 +302,7 @@ defmodule Dagger.Workflow.Rule do
     expression
     |> Steps.name_of_expression()
     |> Workflow.new()
-    |> Workflow.with_rule(condition, reaction)
+    |> workflow_from_rule(condition, reaction)
   end
 
   defp workflow_of_expression(
@@ -312,6 +312,87 @@ defmodule Dagger.Workflow.Rule do
        ) do
     throw("A rule can have only one clause")
     # {:error, "A rule can have only one clause"}
+  end
+
+  defp workflow_from_rule(
+         %Workflow{flow: flow} = workflow,
+         [%Condition{} = a_condition | _more_conditions] = conditions,
+         %Step{} = reaction_step
+       ) do
+    unless Enum.count(conditions) == 1 do
+      arity_check = Steps.is_of_arity?(a_condition.arity)
+      arity_condition = Condition.new(arity_check)
+
+      conjunction = Conjunction.new(conditions)
+
+      flow =
+        flow
+        |> Graph.add_vertex(arity_condition, [
+          arity_condition.hash,
+          "is_of_arity_#{a_condition.arity}"
+        ])
+        |> Graph.add_edge(Workflow.root(), arity_condition, label: {:root, arity_condition.hash})
+        |> Graph.add_vertex(conjunction, [
+          conjunction.hash,
+          "conjunction : #{conditions |> Enum.map(& &1.hash) |> Enum.join(" AND ")}"
+        ])
+
+      # Add the conditions beneath the arity check
+      # Connect the conditions to the conjunction
+      flow =
+        Enum.reduce(conditions, flow, fn condition, flow ->
+          flow
+          |> Graph.add_vertex(condition, [condition.hash, function_name(condition.work)])
+          |> Graph.add_edge(arity_condition, condition,
+            label: {"is_of_arity_#{condition.arity}", condition.hash}
+          )
+          |> Graph.add_edge(condition, conjunction, label: :and)
+        end)
+
+      # Finally add the reaction and connect it to the conjunction above
+      flow =
+        flow
+        |> Graph.add_vertex(reaction_step, [
+          reaction_step.hash,
+          reaction_step.name,
+          function_name(reaction_step.work)
+        ])
+        |> Graph.add_edge(conjunction, reaction_step)
+
+      %Workflow{workflow | flow: flow}
+    else
+      workflow_from_rule(workflow, a_condition, reaction_step)
+    end
+  end
+
+  defp workflow_from_rule(
+         %Workflow{flow: flow} = workflow,
+         %Condition{} = condition,
+         %Step{} = reaction_step
+       ) do
+    arity_check = Steps.is_of_arity?(condition.arity)
+    arity_condition = Condition.new(arity_check)
+
+    %Workflow{
+      workflow
+      | flow:
+          flow
+          |> Graph.add_vertex(arity_condition, [
+            arity_condition.hash,
+            "is_of_arity_#{condition.arity}"
+          ])
+          |> Graph.add_vertex(condition, [condition.hash, function_name(condition.work)])
+          |> Graph.add_vertex(reaction_step, [
+            reaction_step.hash,
+            reaction_step.name,
+            function_name(reaction_step.work)
+          ])
+          |> Graph.add_edge(Workflow.root(), arity_condition, label: {:root, arity_condition.hash})
+          |> Graph.add_edge(arity_condition, condition,
+            label: {"is_of_arity_#{condition.arity}", condition.hash}
+          )
+          |> Graph.add_edge(condition, reaction_step, label: {condition.hash, reaction_step.hash})
+    }
   end
 
   defp binds_of_guarded_anonymous(

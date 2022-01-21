@@ -63,6 +63,11 @@ defmodule Dagger.Workflow.Step do
     |> maybe_set_name()
   end
 
+  defp maybe_set_name(%__MODULE__{name: nil, hash: hash, work: work} = step) do
+    fun_name = work |> Function.info(:name) |> elem(0)
+    %__MODULE__{step | name: "#{fun_name}-#{hash}"}
+  end
+
   defp maybe_set_name(%__MODULE__{name: nil, hash: hash} = step),
     do: %__MODULE__{step | name: to_string(hash)}
 

@@ -293,37 +293,43 @@ defmodule WorkflowTest do
     end
   end
 
-  # describe "rules" do
-  #   setup [:setup_test_pipelines]
+  describe "workflow composition" do
+    test "a workflow can be merged into another workflow" do
+      text_processing_workflow = TestWorkflows.basic_text_processing_pipeline()
 
-  #   test "construction with new/1" do
-  #     assert false
-  #   end
+      some_other_workflow =
+        Dagger.workflow(
+          name: "test workflow",
+          rules: [
+            Dagger.rule(
+              fn
+                :potato -> "potato!"
+              end,
+              name: "rule1"
+            ),
+            Dagger.rule(
+              fn item when is_integer(item) and item > 41 and item < 43 ->
+                result = Enum.random(1..10)
+                result
+              end,
+              name: "rule2"
+            )
+          ]
+        )
 
-  #   test "conditions must be functions" do
-  #     assert false
-  #   end
+      new_wrk = Workflow.merge(text_processing_workflow, some_other_workflow)
+      assert match?(%Workflow{}, new_wrk)
 
-  #   test "a rule's condition must return a boolean" do
-  #     assert false
-  #   end
+      text_processing_workflow
+      |> Workflow.react_until_satisfied("anybody want a peanut?")
+      |> Workflow.reactions()
 
-  #   test "a rule's reaction always returns a fact" do
-  #     assert false
-  #   end
-  # end
+    end
 
-  # describe "workflow composition" do
-  #   setup [:setup_test_pipelines]
-
-  #   test "a workflow can be merged into another workflow" do
-  #     assert false
-  #   end
-
-  #   test "a stateless pipeline workflow can be attached to another workflow as a dependent step" do
-  #     assert false
-  #   end
-  # end
+    test "a stateless pipeline workflow can be attached to another workflow as a dependent step" do
+      assert false
+    end
+  end
 
   describe "use cases" do
     setup [:setup_test_pipelines]

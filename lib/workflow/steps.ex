@@ -64,9 +64,15 @@ defmodule Dagger.Workflow.Steps do
 
   def whatever(whatever), do: whatever
 
-  def name_of_expression(_any) do
-    # todo: actually implement for various kinds of expression
-    UUID.uuid4()
+  def name_of_expression(work) when is_function(work) do
+    name_of_expression(work, work_hash(work))
+  end
+
+  def name_of_expression(_anything_else), do: UUID.uuid4()
+
+  def name_of_expression(work, hash) do
+    fun_name = work |> Function.info(:name) |> elem(1)
+    "#{fun_name}-#{hash}"
   end
 
   def ast_of_compiled_function(module, function_name) do
