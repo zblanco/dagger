@@ -152,8 +152,6 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Conjunction do
         %Workflow{} = workflow,
         %Fact{} = fact
       ) do
-    IO.puts("hey we're trying out the conjunction")
-
     satisfied_conditions =
       Map.get(workflow.activations, fact.hash) |> IO.inspect(label: "activations so far")
 

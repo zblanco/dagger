@@ -121,7 +121,7 @@ defmodule Dagger.Workflow.Steps do
     root_module =
       case Keyword.fetch(aliasing_opts, :counter) do
         {:ok, {root_module, _}} -> root_module
-        nil -> List.first(aliases)
+        :error -> List.first(aliases)
       end
       |> IO.inspect(label: "root_module")
 
