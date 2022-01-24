@@ -1,115 +1,169 @@
 # Dagger
+  
+Dagger is a tool for modeling your workflows as data that can be composed together at runtime.
 
-Dagger is a tool for making runtime modifiable compute graphs.
+Dagger constructs can be integrated into a Dagger.Workflow and evaluated lazily in concurrent contexts.
 
-Dagger supports step-wise job dependency representation as well as rule-based workflows.
+Dagger Workflows are a decorated dataflow graph (a DAG - "directed acyclic graph") of your code that can model your rules, pipelines, and state machines.
 
-You can think of Dagger as a library for expressing templates of a calculation or procedure that can be evaluated lazily like Elixir's `Stream` module.
+Basic data flow dependencies such as in a pipeline are modeled as %Step{} structs (nodes/vertices) in the graph with directed edges (arrows) between steps.
 
-The core capabilities are built around LibGraph where the dependencies between rules/steps/conditions
-  are modeled as a Graph. The primary API's for using Dagger are in the `Pipeline` and `Workflow` modules.
+Steps can be thought of as a simple input -> output lambda function.
 
-Conceptually a Pipeline or a Workflow are static representations of the computation much like compiled code is.
+As Facts are fed through a workflow, various steps are traversed to as needed and activated producing more Facts.
 
-At runtime a process might take the Pipeline or Workflow and run it with inputs to get results. The difference being this 
-  data structure is still modifiable at runtime whereas compiled code might need hot-code-reloading and developer resources.
+Beyond steps, Dagger has support for Rules and Accumulators for conditional and stateful evaluation.
 
-This makes Dagger a useful tool for requirements where the behaviour of a system has to change at runtime without introduction of
-  new code or developer need-to-know.
+Together this enables Dagger to express complex decision trees, finite state machines, data pipelines, and more.
 
-A Dagger pipeline can be built, held in state, modified at run-time, and dispatched for any given input.
+The Dagger.Flowable protocol is what allows for extension of Dagger and composability of structures like Workflows, Steps, Rules, and Accumulators by allowing user defined structures to be integrated into a `Dagger.Workflow`.
 
-This makes Dagger Pipelines a good fit for realtime analysis use-cases or in situations where you want cleaner decoupling your runtime job processing infrastructure from your business logic.
 
-Workflows are a higher level abstraction where you can define Rules, Reactions, and Accumulations of state. A reaction to a rule might be a Dagger Pipeline
-  with predefined inputs to produce further facts that might activate the workflow further.
-
-All business workflow compositions expressed in Domain Driven Design can be thought of in terms of a workflow.
-
-For example in DDD an Aggregate reacts to Commands by producing events and holding state based on past events.
-
-In workflow terminology both Commands and Events are facts. This makes an aggregate a combination of rules that react to command-facts to 
-  accumulate state. State accumulation is expressed as `state_changed` events that can be matched in an `AND` relationship of another Command.
-
-The reverse method is also possible for Process Managers which handle events and produce commands.
-
-Everything else are stateless reactions to facts.
-
-## Just the core logic
-
-Dagger is just the pure business logic to construct, express, and evaluate the compute graphs.
-
-The intention is that there's so many ways to "do the runtime" especially with something as powerful as the BEAM under the hood.
-
-I didn't want to impose a specific OTP topology to users of this library but instead provide a clean API that you can use in 
-  whatever architecture you find Dagger fits your requirements.
-
-I might provide adapters and implementations that can be used for common use cases, but that shouldn't stop you from extending on your own.
-
-## Pipelines and Steps
-
-A Dagger.Step is ran by taking the `input` of a Step and running the `work/1` function contained in the `work` key of the Step.
-
-Dependent Steps are given the finished `Step` with a `result` to it as input.
-
-## Dagger Pipeline Runners
-
-Dagger just specifies a contract that a Runner most implement. A common Runner implementation could be a queue feeding to a pool of workers.
-
-In a simple scenario you could implement a Runner with Elixir's Task module:
+## Example Text Processing Pipeline
 
 ```elixir
-### MyApp.Application
-children = [
-  ...
-  {Task.Supervisor, name: MyApp.TaskSupervisor}
+require Dagger
+
+text_processing_pipeline =
+  Dagger.workflow(
+    name: "basic text processing example",
+    steps: [
+      {Dagger.step(name: "tokenize", work: &TextProcessing.tokenize/1),
+       [
+         {Dagger.step(name: "count words", work: &TextProcessing.count_words/1),
+          [
+            Dagger.step(name: "count unique words", work: &TextProcessing.count_uniques/1)
+          ]},
+         Dagger.step(name: "first word", work: &TextProcessing.first_word/1),
+         Dagger.step(name: "last word", work: &TextProcessing.last_word/1)
+       ]}
+    ]
+  )
+```
+
+The text processing workflow above builds a graph that looks like this
+![text-pipeline.svg](https://raw.githubusercontent.com/zblanco/dagger/1c911238aa4f0e6ad3a71bf54e722ce153b603d9/text-processing-pipeline.svg)
+
+The way we can run this is by starting at the top, the root, and following the arrows down to identify the next step(s) to run with some input. The data flows down the graph following the arrows until it reaches the end satisfying all steps for the data input.
+
+Dagger also supports rules. Rules are ways of constraining when to execute a step.
+
+## Rules
+
+```elixir
+when_42_rule =
+  Dagger.rule(
+    fn item when is_integer(item) and item > 41 and item < 43 ->
+      Enum.random(1..10)
+    end,
+    name: "when 42 random"
+  )
+```
+
+The rule above is then tranformed into a workflow that looks like this
+
+![when_42_rule.svg](https://raw.githubusercontent.com/zblanco/dagger/26763fc0e88cc17e3fe0912eec8b634afbb0913a/when_42_rule.svg)
+
+This graph representation of the rule above is now composable with other rules or pipelines to be executed together
+as concurrently or lazily as desired.
+
+So we can build another workflow with both this rule and another.
+
+```elixir
+composed_workflow =
+  Dagger.workflow(
+    name: "composition of rules example",
+    rules: [
+      Dagger.rule(
+        fn
+          :potato -> "potato!"
+        end,
+        name: "is it a potato?"
+      ),
+      Dagger.rule(
+        fn item when is_integer(item) and item > 41 and item < 43 ->
+          Enum.random(1..10)
+        end,
+        name: "when 42 random"
+      )
+    ]
+  )
+```
+
+Our `composed_workflow` of those two rules now looks like this
+
+![composed_workflow.svg](https://raw.githubusercontent.com/zblanco/dagger/8f302e6c62c7f69519c13d9c434533b59449598e/composed_workflow.svg)
+
+You'll notice on the left side of the image we have our workflow with three conditions joined by conjunctions (AND) with an additional branch containing our potato rule.
+
+Now we can provide an input to our workflow such as `:potato` or `43` and see how the workflow reacts.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+composed_workflow
+|> Workflow.plan_eagerly(:potato)
+|> Workflow.next_runnables()
+
+# result
+[
+  {%Dagger.Workflow.Step{
+     hash: 1036416829,
+     name: "name-1036416829",
+     work: #Function<44.40011524/1 in :erl_eval.expr/5>
+   },
+   %Dagger.Workflow.Fact{ancestry: nil, hash: 125216943, runnable: nil, type: nil, value: :potato}}
+]
+```
+
+Here we asked the workflow to plan i.e. 'find out' if there's any work to do, since our potato rule
+matches on `:potato`, our input, it responded by saying that we can execute a step to return the left hand
+side of the rule: `"potato!"`.
+
+So now lets execute the workflow all the way through.
+
+<!-- livebook:{"force_markdown":true} -->
+
+```elixir
+composed_workflow
+|> Workflow.plan_eagerly(:potato) # identify the work to do by checking conditions closer to the root
+|> Workflow.react() # execute a phase of runnables found by planning
+|> Workflow.reactions() # list the facts produced from the phase of reactions
+
+# result
+[
+  %Dagger.Workflow.Fact{
+    ancestry: {1036416829, 125216943},
+    hash: 3112435556,
+    runnable: {%Dagger.Workflow.Step{
+       hash: 1036416829,
+       name: "name-1036416829",
+       work: #Function<44.40011524/1 in :erl_eval.expr/5>
+     },
+     %Dagger.Workflow.Fact{ancestry: nil, hash: 125216943, runnable: nil, type: nil, value: :potato}},
+    value: "potato!"
+  }
 ]
 
-### Runner
-
-defmodule MyApp.TaskRunner do
-  alias MyApp.TaskSupervisor
-  alias Dagger.Step
-  @behaviour Dagger.Runner
-
-  @impl true
-  def run(%Step{runnable?: true, runner: __MODULE__} = step) do
-    TaskSupervisor.start_link([
-      {Task, fn -> Step.run(step) end}
-    ], strategy: :one_for_one)
-    :ok
-  def run([] = steps) do
-    Enum.each(steps, fn %Step{} = step -> enqueue(step))
-    :ok
-  end
-
-  @impl true
-  def ack, do: :ok
-
-  def cancel, do: :ok
-end
 ```
-Using the task module like this is unbounded concurrency which can be dangerous, so consider using an actual Queue with some limited concurrency strategy like a worker pool.
 
-Broadway, and/or Genstage are good tools for the kind of data processing piplines Dagger is useful for. For different kinds of guarantees like exactly once processing you could also use Oban or a similar database-backed queue as your runner. Since a Dagger Step is just a datastructure that can be built at run-time, you could use any variety of Runners at the same time in your application.
+<!-- livebook:{"break_markdown":true} -->
 
-## Dagger Workflows
+Two things to note here:
 
-Example:
+1. We can see the runnable and the ancestry of the `(work, input)` pair that produced the fact.
 
-```elixir
-
-
-```
+2. We see the intended result value of our potato rule: `"potato!"`
 
 ### Disclaimers
 
-Dagger is in early/active development, not yet stable, and as such is not available on Hex. Adressing concerns like retries, timeouts, persistence for large data/result-sets and safer validation is in progress. It'll be released when I like it. Use Dagger in production at your own peril. That said Dagger is a simple tool so feel free to fork, extend, and tell me about your use case.
+Dagger is in early/active development and the apis are not stable. Use Dagger in production at your own risk.
 
 Dagger is a high level abstraction that brings your business logic expression into runtime modification. That means you don't get the same compile-time
-guarantees and it adds a layer of complexity. I don't recommend using it when you can just write code to the same effect. Rule of thumb is that if your state machine is getting complex and unwieldy you might be better off expressing the problem as constraints with rules and reactions instead of modeling each state transition manually. The sweet spot of Dagger is when a non-coding user needs to make specific and isolated changes to a business procedure or calculation. 
+guarantees and it adds a layer of complexity. I don't recommend using Dagger when you can write compiled code to the same effect. 
 
-Consider also making a DSL or transformation the DSL's output into a Dagger structure that can be run.
+**Do Not** allow users to write and execute arbitrary Elixir code on a machine running Dagger, or using the `Code` modules in Elixir. Instead wrap and hide 
+these sorts of capabilities behind an interface such as a DSL, or a gui.
 
 ## Installation
 
@@ -119,7 +173,7 @@ by adding `dagger` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:dagger, "~> 0.1.0"}
+    {:dagger, github: "zblanco/dagger", branch: "master"}
   ]
 end
 ```
