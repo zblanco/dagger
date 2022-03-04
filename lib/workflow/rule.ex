@@ -10,11 +10,7 @@ defmodule Dagger.Workflow.Rule do
   A rule added to a workflow is a way to compose many patterns/conditionals that can be evaluated like
     a bunch of overloaded functions being matched against.
 
-  Instead of a function we might make Condition a Runnable by following a protocol so abstractions of conditional logic
-    can be extended upon more naturally. Ultimately Conditions and Reactions become steps, the protocol would just
-    convert a more complex condition into many dependent steps in the case that reactions to specific clauses are added.
-
-  Rules are useful constructs to have persisted and indexed for runtime addition to an existing workflow.
+  Rules are useful for things like Rule based expert systems where one may query for pertinent rules from a database and build a workflow of them at runtime.
   """
   alias Dagger.Workflow
   alias Dagger.Workflow.Condition
@@ -36,8 +32,6 @@ defmodule Dagger.Workflow.Rule do
           description: String.t(),
           arity: arity(),
           workflow: Workflow.t(),
-          # condition: any(),
-          # reaction: any(),
           expression: expression()
         }
 
@@ -71,6 +65,9 @@ defmodule Dagger.Workflow.Rule do
     =~
   )a
 
+  @doc """
+  Constructs a rule struct given an expression and options. Expects the expression to be a tuple of a left a right hand side.
+  """
   def new(expression, opts \\ []) do
     name = Keyword.get(opts, :name) || Steps.name_of_expression(expression)
     description = Keyword.get(opts, :description)
@@ -88,7 +85,7 @@ defmodule Dagger.Workflow.Rule do
   end
 
   @doc """
-  Checks a rule's left hand side .
+  Checks a rule's left hand side.
   """
   def check(%__MODULE__{} = rule, input) do
     rule

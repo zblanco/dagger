@@ -253,22 +253,25 @@ defmodule DaggerTest do
   end
 
   describe "Dagger.accumulator/1 constructor" do
-    test "constructs a Flowable %Accumulator{} given a name, init, and reducers" do
+    test "constructs a Flowable %Accumulator{} given a name, init, and a reducer expression" do
       accumulator =
         Dagger.accumulator(
-          name: "adds integers to its state up until 30 then stops",
+          name: "adds integers of some factor to its state up until 30 then stops",
           init: 0,
-          reducers: [
-            fn num, state when is_integer(num) and state >= 0 and state < 10 -> state + num end,
-            fn num, state when is_integer(num) and state >= 10 and state < 20 -> state + num end,
-            fn num, state when is_integer(num) and state >= 20 and state < 30 -> state + num end,
-            fn _num, state -> state end
-          ]
+          reducer:
+            fn
+              num, state when is_integer(num) and state >= 0 and state < 10 -> state + num * 1
+              num, state when is_integer(num) and state >= 10 and state < 20 -> state + num * 2
+              num, state when is_integer(num) and state >= 20 and state < 30 -> state + num * 3
+              _num, state -> state
+            end
         )
 
       assert match?(%Accumulator{}, accumulator)
 
-      assert match?(%Workflow{}, Dagger.Flowable.to_workflow(accumulator))
+      wrk = Dagger.Flowable.to_workflow(accumulator)
+
+      assert match?(%Workflow{}, wrk)
     end
   end
 end

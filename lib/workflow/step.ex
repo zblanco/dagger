@@ -64,7 +64,7 @@ defmodule Dagger.Workflow.Step do
   end
 
   defp maybe_set_name(%__MODULE__{name: nil, hash: hash, work: work} = step) do
-    fun_name = work |> Function.info(:name) |> elem(0)
+    fun_name = work |> Function.info(:name) |> elem(1)
     %__MODULE__{step | name: "#{fun_name}-#{hash}"}
   end
 
@@ -78,9 +78,6 @@ defmodule Dagger.Workflow.Step do
   def run(%__MODULE__{} = step, input) when not is_struct(input, Fact) do
     Steps.run(step.work, input)
   end
-
-  # todo: inject hashing method as dependency
-  # consider forking libgraph to allow for user-defined node hashing/id functions
 
   # def run(%Step{work: {m, f}} = step, %Fact{} = fact) do
   #   result_value = apply(m, f, [fact.value])

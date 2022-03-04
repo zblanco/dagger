@@ -42,7 +42,11 @@ defmodule Dagger.Workflow do
           hash: binary(),
           activations: any(),
           facts: list(),
-          agenda: Agenda.t()
+          agenda: Agenda.t(),
+          steps_executed: integer(),
+          phases: integer(),
+          generations: integer(),
+          epochs: integer()
         }
 
   @type runnable() :: {fun(), term()}
@@ -50,9 +54,15 @@ defmodule Dagger.Workflow do
   @enforce_keys [:name]
 
   defstruct name: nil,
+            steps_executed: 0,
+            phases: 0,
+            generations: 0,
+            epochs: 0,
             hash: nil,
             flow: nil,
             activations: nil,
+            memory: nil,
+            runnables: %{},
             facts: [],
             agenda: nil
 
@@ -76,6 +86,7 @@ defmodule Dagger.Workflow do
     struct!(__MODULE__, params)
     |> Map.put(:flow, flow)
     |> Map.put(:activations, %{})
+    |> Map.put(:memory, Graph.new())
     |> Map.put(:agenda, Agenda.new())
   end
 
@@ -100,12 +111,6 @@ defmodule Dagger.Workflow do
     end)
   end
 
-  # def react(%__MODULE__{agenda: %Agenda{cycles: cycles}} = wrk) when cycles > 0 do
-  #   Enum.reduce(Map.values(wrk.agenda.runnables), wrk, fn {node, fact}, wrk ->
-  #     Activation.activate(node, wrk, fact)
-  #   end)
-  # end
-
   @doc """
   Plans eagerly through the match phase then executes a single cycle of right hand side runnables.
   """
@@ -129,15 +134,13 @@ defmodule Dagger.Workflow do
 
   One should be careful about using react_until_satisfied with infinite loops as evaluation will not terminate.
 
-  If your goal is to evaluate some non-terminating program to some finite number of cycles - wrapping
-  `react/2` in a process that can track workflow evaluation cycles until some point is likely preferable.
+  If your goal is to evaluate some non-terminating program to some finite number of generations - wrapping
+  `react/2` in a process that can track workflow evaluation livecycles until desired is recommended.
   """
   def react_until_satisfied(%__MODULE__{} = wrk, %Fact{ancestry: nil} = fact) do
     wrk
     |> react(fact)
     |> react_until_satisfied()
-
-    # react_until_satisfied(Activation.activate(root(), wrk, fact))
   end
 
   def react_until_satisfied(%__MODULE__{} = wrk, raw_fact) do
@@ -266,7 +269,7 @@ defmodule Dagger.Workflow do
   end
 
   def log_fact(
-        %__MODULE__{activations: activations, facts: facts} = wrk,
+        %__MODULE__{activations: activations, facts: facts, memory: memory} = wrk,
         %Fact{value: :satisfied, ancestry: {condition_hash, fact_hash}} = fact
       ) do
     activations_for_fact =
@@ -274,10 +277,13 @@ defmodule Dagger.Workflow do
       |> Map.get(fact_hash, MapSet.new([condition_hash]))
       |> MapSet.put(condition_hash)
 
+    memory = Graph.add_edge(memory, condition_hash, fact_hash, label: :satisfied)
+
     %__MODULE__{
       wrk
       | # do we ever want the inverse hash table (cond_hash, set<fact_hashe>) or both?
         activations: Map.put(activations, fact_hash, activations_for_fact),
+        memory: memory,
         facts: [fact | facts]
     }
   end
@@ -297,20 +303,6 @@ defmodule Dagger.Workflow do
           end)
     }
   end
-
-  # @doc """
-  # Runs a runnable workflow by executing steps ready in the agenda.
-
-  # Appends resulting facts to the log.
-  # """
-  # def run(%__MODULE__{agenda: agenda} = wrk) do
-  #   wrk =
-  #     Enum.reduce(agenda.runnables, wrk, fn {_key, {step, fact}}, wrk ->
-  #       Activation.activate(step, wrk, fact)
-  #     end)
-
-  #   %__MODULE__{wrk | agenda: Agenda.next_cycle(wrk.agenda)}
-  # end
 
   @spec raw_reactions(Dagger.Workflow.t()) :: list(any())
   @doc """
@@ -522,20 +514,20 @@ defmodule Dagger.Workflow do
     end
   end
 
-  @doc """
-  Adds an accumulator to a Workflow.
+  # @doc """
+  # Adds an accumulator to a Workflow.
 
-  `Dagger.Accumulators` are used to collect some state for which to make further decision upon.
+  # `Dagger.Accumulators` are used to collect some state for which to make further decision upon.
 
-  You can think of an accumulator as a set of reducer functions that react over a shared state.
+  # You can think of an accumulator as a set of reducer functions that react over a shared state.
 
-  See the `Dagger.Accumulator module` for more details.
-  """
-  def add_accumulator(%__MODULE__{} = workflow, accumulator) do
-    %Accumulator{init: init, reducers: reducers} = accumulator
+  # See the `Dagger.Accumulator module` for more details.
+  # """
+  # def add_accumulator(%__MODULE__{} = workflow, accumulator) do
+  #   %Accumulator{init: init, reducers: reducers} = accumulator
 
-    Enum.reduce(reducers, add_rule(workflow, init), fn reducer, workflow ->
-      add_rule(workflow, reducer)
-    end)
-  end
+  #   Enum.reduce(reducers, add_rule(workflow, init), fn reducer, workflow ->
+  #     add_rule(workflow, reducer)
+  #   end)
+  # end
 end

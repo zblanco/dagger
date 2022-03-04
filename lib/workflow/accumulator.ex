@@ -39,31 +39,54 @@ defmodule Dagger.Workflow.Accumulator do
   ```
   """
   alias Dagger.Workflow.Rule
+  alias Dagger.Workflow
+  alias Dagger.Workflow.Steps
 
   defstruct [
+    :name,
     # rule where the condition consumes a fact that isn't a `state_produced` of this accumulator and returns the initial `state_produced` fact.
     :init,
     # rules where the condition matches on an external fact and a state_produced fact of this accumulator.
-    :reducers
+    :reducer,
+    :workflow,
   ]
 
-  def new(opts) do
-    __MODULE__
-    |> struct!(opts)
+  def new(init, reducer, opts \\ []) do
+    name = Keyword.get(opts, :name) || Steps.name_of_expression(reducer)
+    workflow = workflow_of_reducer(init, reducer)
 
-    # |> normalize()
+    %__MODULE__{
+      name: name,
+      init: init,
+      reducer: reducer,
+      workflow: workflow
+    }
   end
 
-  def new(%Rule{} = init, [] = reducers) do
-    # todo: ensure rule reactions always return a `state_produced` event/fact representing the accumulator definition.
-    %__MODULE__{init: init, reducers: reducers}
+  defp workflow_of_reducer(_init, reducer) do
+    Workflow.new(Steps.name_of_expression(reducer))
   end
 
-  def add_reducer(
-        %__MODULE__{reducers: [] = reducers} = accumulator,
-        %Rule{} = state_reactor
-      ) do
-    # todo: validate state_reactors meet contract of an AND
-    %__MODULE__{accumulator | reducers: [reducers | [state_reactor]]}
-  end
+  # def new(init, reducers) when is_list(reducers) do
+  #   new(init_of_accumulator(ast_init), Enum.map(reducers, &reducer_to_state_reactor/1))
+  # end
+
+
+
+  # def new(%Rule{} = init, [%Rule{} | _] = reducers) do
+  #   # todo: ensure rule reactions always return a `state_produced` event/fact representing the accumulator definition.
+  #   %__MODULE__{init: init, reducers: reducers}
+  # end
+
+  # defp reducers_to_state_reactor(reducer) do
+
+  # end
+
+  # def add_reducer(
+  #       %__MODULE__{reducers: [] = reducers} = accumulator,
+  #       %Rule{} = state_reactor
+  #     ) do
+  #   # todo: validate state_reactors meet contract of an AND
+  #   %__MODULE__{accumulator | reducers: [reducers | [state_reactor]]}
+  # end
 end

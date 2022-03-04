@@ -1,11 +1,11 @@
 defprotocol Dagger.Workflow.Activation do
   @moduledoc """
-  Protocol enforcing how an operation/step/node within a workflow can always be activated in context of the workflow.
+  Protocol enforcing how an operation/step/node within a workflow can always be activated in context of a workflow.
 
   Activation protocol permits only serial state transformations of a workflow, i.e. the return of activating a node is always a new Workflow.
 
   Activation is used for varying types of nodes within a workflow to know how
-    to "activate" by preparing an agenda and maintain state for partially satisfied conditions.
+    to "activate" by preparing an agenda and maintaining state for partially satisfied conditions.
 
   The activation protocol's goal is to extract the runnables of the next cycle and prepare that in the agenda in the minimum amount of work.
 
@@ -174,6 +174,72 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Conjunction do
       |> Workflow.prune_activated_runnable(conj, fact)
     else
       Workflow.prune_activated_runnable(workflow, conj, fact)
+    end
+  end
+
+  defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.MemoryAssertion do
+    alias Dagger.Workflow
+
+    alias Dagger.Workflow.{
+      Fact,
+      MemoryAssertion
+    }
+
+    def activate(
+          %MemoryAssertion{} = ma,
+          %Workflow{} = workflow,
+          %Fact{} = fact
+        ) do
+      with true <- ma.memory_assertion.(workflow.memory) do
+        memory_assertion_satisfied_fact =
+          Fact.new(value: :satisfied, ancestry: {ma.hash, fact.hash}, runnable: {ma, fact})
+
+        next_runnables =
+          workflow
+          |> Workflow.next_steps(ma)
+          |> Enum.map(& {&1, fact})
+
+        workflow
+        |> Workflow.log_fact(memory_assertion_satisfied_fact)
+        |> Workflow.add_to_agenda(next_runnables)
+        |> Workflow.prune_activated_runnable(ma, fact)
+      else
+        _anything_otherwise -> Workflow.prune_activated_runnable(workflow, ma, fact)
+      end
+    end
+  end
+
+  defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.StateReactor do
+    alias Dagger.Workflow
+
+    alias Dagger.Workflow.{
+      Fact,
+      StateReactor
+    }
+
+    def activate(
+          %StateReactor{} = sr,
+          %Workflow{} = workflow,
+          %Fact{} = fact
+        ) do
+      workflow
+    end
+  end
+
+  defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Join do
+    alias Dagger.Workflow
+
+    alias Dagger.Workflow.{
+      Fact,
+      Join
+    }
+
+    def activate(
+          %Join{} = sr,
+          %Workflow{} = workflow,
+          %Fact{} = fact
+        ) do
+      workflow
     end
   end
 end

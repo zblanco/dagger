@@ -181,19 +181,30 @@ defmodule Dagger do
     |> add_rules(rules)
   end
 
-  def accumulator(opts \\ []) do
+  defmacro accumulator(opts \\ []) do
     init =
       Keyword.get(opts, :init) ||
         raise ArgumentError, "Defining an accumulator requires an initiator function or value"
 
-    reducers =
-      Keyword.get(opts, :reducers) ||
-        raise ArgumentError, "Defining an accumulator requires a list of reducers"
+    reducer =
+      Keyword.get(opts, :reducer) ||
+        raise ArgumentError, "Defining an accumulator a reducer"
 
-    Accumulator.new(
-      init: init,
-      reducers: reducers
-    )
+    quote bind_quoted: [
+            init: Macro.escape(init),
+            reducer: Macro.escape(reducer)
+          ] do
+      Accumulator.new(init, reducer)
+    end
+  end
+
+  defmacro accumulator(init, reducer) do
+    quote bind_quoted: [
+            init: Macro.escape(init),
+            reducer: Macro.escape(reducer)
+          ] do
+      Accumulator.new(init, reducer)
+    end
   end
 
   # defp init_rule(%Rule{} = init, _acc_name), do: init

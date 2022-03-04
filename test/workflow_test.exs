@@ -140,24 +140,24 @@ defmodule WorkflowTest do
 
       Dagger.workflow(
         name: "a test workflow",
-        accumulators: [
-          Dagger.accumulator(
-            name: "fancy counter",
-            init: 0,
-            reducers: [
-              fn
-                num when num <= 10 -> num + 1
-                num when num > 10 -> num + 2
-                num when num > 20 -> num + 2
-              end,
-              Dagger.rule(
-                fn num when num > 30 -> num + 3 end,
-                name: "greater than 30 increment more",
-                description: "when the number is greater than 30 we increment by 3"
-              )
-            ]
-          )
-        ],
+        # accumulators: [
+        #   Dagger.accumulator(
+        #     name: "fancy counter",
+        #     init: 0,
+        #     reducers: [
+        #       fn
+        #         num when num <= 10 -> num + 1
+        #         num when num > 10 -> num + 2
+        #         num when num > 20 -> num + 2
+        #       end,
+        #       Dagger.rule(
+        #         fn num when num > 30 -> num + 3 end,
+        #         name: "greater than 30 increment more",
+        #         description: "when the number is greater than 30 we increment by 3"
+        #       )
+        #     ]
+        #   )
+        # ],
         rules: [
           Dagger.rule(fn :foo -> :bar end,
             name: "test rule",
@@ -292,6 +292,87 @@ defmodule WorkflowTest do
       assert is_integer(result_value)
     end
   end
+
+  # describe "workflow identity and reflection" do
+  #   setup do
+  #     rule_1 = Dagger.rule(
+  #       fn
+  #         :potato -> "potato!"
+  #       end,
+  #       name: "rule_1"
+  #     )
+
+  #     rule_2 = Dagger.rule(
+  #       fn item when is_integer(item) and item > 41 and item < 43 ->
+  #         result = Enum.random(1..10)
+  #         result
+  #       end,
+  #       name: "rule_2"
+  #     )
+
+  #     workflow =
+  #       Dagger.workflow(
+  #         name: "test workflow",
+  #         rules: [
+  #           rule_1, rule_2
+  #         ]
+  #       )
+
+  #     {:ok, [workflow: workflow, rules: [rule_1, rule_2]]}
+  #   end
+
+  #   test "Workflow.fetch/2 can use the `:name` or `:hash` to find a workflow component", %{workflow: workflow, rules: [rule_1 | _]} do
+  #     assert rule_1 == Workflow.fetch(workflow, name: rule_1.name)
+  #     assert rule_1 == Workflow.fetch(workflow, hash: rule_1.hash)
+  #   end
+
+  #   test "Workflow.components/1 returns a list of named components the workflow consists of", %{workflow: workflow, rules: rules} do
+  #     assert Enum.all?(rules, & &1 in Workflow.components(workflow))
+  #   end
+
+  #   test "Workflow.components_by_name/1 returns a map of named components in the workflow by name", %{workflow: workflow, rules: rules} do
+  #     components_by_name = Workflow.components_by_name(workflow)
+
+  #     assert Enum.all?(rules, & &1.name in Map.keys(components_by_name))
+  #     assert Enum.all?(rules, & &1 in Map.values(components_by_name))
+  #   end
+
+  #   test "Workflow.rules/1 returns a list of the rules present in the workflow", %{workflow: workflow, rules: rules} do
+  #     assert Enum.all?(rules, & &1 in Workflow.rules(workflow))
+  #   end
+
+  #   test "Workflow.steps/1 returns a list of the steps present in the workflow" do
+  #     steps = [
+  #       Dagger.step(fn num -> num * 2 end),
+  #       Dagger.step(fn num -> num - 2 end),
+  #       Dagger.step(fn num -> num + 2 end),
+  #     ]
+
+  #     wrk = Dagger.workflow(name: "two step", steps: steps)
+
+  #     assert Enum.all?(steps, & &1 in Workflow.steps(wrk))
+  #   end
+
+  #   test "Workflow.conditions/1 returns a list of the conditions present in the workflow" do
+  #     rules = [
+  #       Dagger.rule(fn num when num == 2 -> num * 2 end),
+  #       Dagger.rule(fn num when num != 2-> num + 2 end),
+  #     ]
+
+  #     wrk = Dagger.workflow(name: "two rules", rules: rules)
+
+  #     # assert Enum.all?(steps, & &1 in Workflow.steps(wrk))
+
+  #   end
+
+  #   test "Workflow.conjunctions/1 returns a list of the conjunctions present in the workflow" do
+
+  #   end
+
+  #   test "Workflow.accumulators/1 returns a list of the accumulators present in the workflow" do
+
+  #   end
+  # end
 
   describe "workflow composition" do
     test "a workflow can be merged into another workflow" do

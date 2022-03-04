@@ -11,7 +11,6 @@ defmodule Dagger.Workflow.Fact do
   # import Norm
   defstruct value: nil,
             ancestry: nil,
-            type: nil,
             runnable: nil,
             hash: nil
 
@@ -33,9 +32,7 @@ defmodule Dagger.Workflow.Fact do
   """
   @type t() :: %__MODULE__{
           value: value(),
-          # {work, value}
           ancestry: {hash(), hash()},
-          type: atom(),
           runnable: {any(), __MODULE__.t()} | nil
         }
 
