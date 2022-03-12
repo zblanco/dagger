@@ -117,6 +117,8 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Step do
     Steps
   }
 
+  @spec activate(%Dagger.Workflow.Step{}, Dagger.Workflow.t(), Dagger.Workflow.Fact.t()) ::
+          Dagger.Workflow.t()
   def activate(
         %Step{} = step,
         %Workflow{} = workflow,
@@ -147,6 +149,8 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Conjunction do
     Conjunction
   }
 
+  @spec activate(%Dagger.Workflow.Conjunction{}, Dagger.Workflow.t(), Dagger.Workflow.Fact.t()) ::
+          Dagger.Workflow.t()
   def activate(
         %Conjunction{} = conj,
         %Workflow{} = workflow,
@@ -185,6 +189,11 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Conjunction do
       MemoryAssertion
     }
 
+    @spec activate(
+            %Dagger.Workflow.MemoryAssertion{},
+            Dagger.Workflow.t(),
+            Dagger.Workflow.Fact.t()
+          ) :: Dagger.Workflow.t()
     def activate(
           %MemoryAssertion{} = ma,
           %Workflow{} = workflow,
@@ -197,7 +206,7 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Conjunction do
         next_runnables =
           workflow
           |> Workflow.next_steps(ma)
-          |> Enum.map(& {&1, fact})
+          |> Enum.map(&{&1, fact})
 
         workflow
         |> Workflow.log_fact(memory_assertion_satisfied_fact)
@@ -214,16 +223,46 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Conjunction do
 
     alias Dagger.Workflow.{
       Fact,
+      Steps,
       StateReactor
     }
 
+    @spec activate(%Dagger.Workflow.StateReactor{}, Dagger.Workflow.t(), Dagger.Workflow.Fact.t()) ::
+            Dagger.Workflow.t()
     def activate(
           %StateReactor{} = sr,
           %Workflow{} = workflow,
           %Fact{} = fact
         ) do
+      # get last known state of this reactor or use init
+      last_known_state = last_known_state(workflow, sr) || init_fact(sr)
+
+      next_state = apply(sr.reactor, [fact.value, last_known_state.value])
+
+      next_state_produced_fact =
+        Fact.new(value: next_state, ancestry: {sr.hash, fact.hash}, runnable: {sr, fact})
+
+      next_runnables =
+        workflow
+        |> Workflow.next_steps(sr)
+        |> Enum.map(&{&1, next_state_produced_fact})
+
       workflow
+      |> Workflow.log_fact(next_state_produced_fact)
+      |> Workflow.add_to_agenda(next_runnables)
+      |> Workflow.prune_activated_runnable(sr, fact)
     end
+
+    defp last_known_state(workflow, state_reactor) do
+      workflow.memory
+      |> Graph.out_edges(state_reactor.hash)
+      |> Enum.filter(&(&1.label == :produced and &1.generation == workflow.generation - 1))
+      |> List.first(%{})
+      |> Map.get(:v1)
+    end
+
+    defp init_fact(%StateReactor{init: init, hash: hash}),
+      do: Fact.new(value: init, ancestry: {hash, Steps.fact_hash(init)})
   end
 
   defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Join do
@@ -234,12 +273,37 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Conjunction do
       Join
     }
 
+    @spec activate(%Dagger.Workflow.Join{}, Dagger.Workflow.t(), Dagger.Workflow.Fact.t()) ::
+            Dagger.Workflow.t()
     def activate(
-          %Join{} = sr,
+          %Join{} = join,
           %Workflow{} = workflow,
-          %Fact{} = fact
+          %Fact{ancestry: {parent_hash, _value_hash}} = fact
         ) do
-      workflow
+      with true <- Enum.all?(join.joins, &(&1 in Graph.neighbors(workflow.memory, join.hash))) do
+        # for each required parent in :joins build a map of `parent -> fact` by grabbing the
+        # facts for the current generation
+        join_bindings =
+          Enum.reduce(join.joins, %{parent_hash => fact}, fn step_hash, acc ->
+            Map.put_new(acc, step_hash, Workflow.get_current_generation_fact(workflow, step_hash))
+          end)
+
+        join_bindings_fact =
+          Fact.new(value: join_bindings, ancestry: {join.hash, fact.hash}, runnable: {join, fact})
+
+        next_runnables =
+          workflow
+          |> Workflow.next_steps(join)
+          |> Enum.map(&{&1, fact})
+
+        workflow
+        |> Workflow.log_fact(join_bindings_fact)
+        |> Workflow.add_to_agenda(next_runnables)
+        |> Workflow.prune_activated_runnable(join, fact)
+      else
+        _otherwise ->
+          Workflow.prune_activated_runnable(workflow, join, fact)
+      end
     end
   end
 end

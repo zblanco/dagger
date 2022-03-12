@@ -292,6 +292,13 @@ defmodule Dagger.Workflow do
     %__MODULE__{wrk | facts: [fact | facts]}
   end
 
+  @doc false
+  def get_current_generation_fact(%__MODULE__{} = workflow, step_hash) do
+    workflow.facts
+    |> Map.get(workflow.generations)
+    |> Map.get(step_hash)
+  end
+
   def add_to_agenda(%__MODULE__{agenda: agenda} = wrk, runnables) when is_list(runnables) do
     %__MODULE__{
       wrk

@@ -41,6 +41,7 @@ defmodule Dagger.Workflow.Accumulator do
   alias Dagger.Workflow.Rule
   alias Dagger.Workflow
   alias Dagger.Workflow.Steps
+  alias Dagger.Workflow.Fact
 
   defstruct [
     :name,
@@ -63,8 +64,19 @@ defmodule Dagger.Workflow.Accumulator do
     }
   end
 
-  defp workflow_of_reducer(_init, reducer) do
-    Workflow.new(Steps.name_of_expression(reducer))
+  defp workflow_of_reducer(init, reducer) do
+
+     Workflow.new(Steps.name_of_expression(reducer))
+
+    # if Macro.quoted_literal?(init) do
+    #   init_fact = Fact.new(value: init)
+
+    #   wrk =
+    #     wrk
+    #     |> Workflow.log_fact(init_fact)
+
+    #   %Workflow{wrk | memory: wrk.memory |> Graph.add_vertex(init_fact)}
+    # end
   end
 
   # def new(init, reducers) when is_list(reducers) do

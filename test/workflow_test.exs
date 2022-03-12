@@ -293,6 +293,18 @@ defmodule WorkflowTest do
     end
   end
 
+  # describe "workflow activation protocol interactions" do
+  #   test "a join activates when its parent steps have produced its required facts combining the two steps in fact with binding context" do
+  #     wrk =
+  #       Dagger.workflow(
+  #         name: "join_wrk",
+  #         steps: [
+  #           Dagger.step()
+
+  #       ])
+  #   end
+  # end
+
   # describe "workflow identity and reflection" do
   #   setup do
   #     rule_1 = Dagger.rule(

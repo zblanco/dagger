@@ -266,16 +266,4 @@ defmodule Dagger do
   def step({m, f, a} = work, opts) when is_atom(m) and is_atom(f) and is_integer(a) do
     Step.new(Keyword.merge([work: work], opts))
   end
-
-  # def next_runnables(flowable) do
-
-  # end
-
-  # def next_runnables(%Workflow{} = workflow, %Fact{} = input) do
-  #   Workflow.next_runnables(workflow, input)
-  # end
-
-  # def next_runnables(runnable, input) do
-  #   Dagger.Flowable.to_workflow()
-  # end
 end
