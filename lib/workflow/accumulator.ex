@@ -42,48 +42,51 @@ defmodule Dagger.Workflow.Accumulator do
   alias Dagger.Workflow
   alias Dagger.Workflow.Steps
   alias Dagger.Workflow.Fact
+  alias Dagger.Workflow.StateReactor
 
   defstruct [
     :name,
     # rule where the condition consumes a fact that isn't a `state_produced` of this accumulator and returns the initial `state_produced` fact.
     :init,
-    # rules where the condition matches on an external fact and a state_produced fact of this accumulator.
     :reducer,
-    :workflow,
+    :workflow
   ]
 
-  def new(init, reducer, opts \\ []) do
-    name = Keyword.get(opts, :name) || Steps.name_of_expression(reducer)
-    workflow = workflow_of_reducer(init, reducer)
+  # def new(init, reducer, opts \\ []) do
+  #   name = Keyword.get(opts, :name) || Steps.name_of_expression(reducer)
+  #   workflow = workflow_of_reducer(init, reducer)
 
-    %__MODULE__{
-      name: name,
-      init: init,
-      reducer: reducer,
-      workflow: workflow
-    }
-  end
+  #   %__MODULE__{
+  #     name: name,
+  #     init: init,
+  #     reducer: reducer,
+  #     workflow: workflow
+  #   }
+  # end
 
-  defp workflow_of_reducer(init, reducer) do
+  # defp workflow_of_reducer(init, reducer) do
 
-     Workflow.new(Steps.name_of_expression(reducer))
+  #   wrk = Workflow.new(Steps.name_of_expression(reducer))
 
-    # if Macro.quoted_literal?(init) do
-    #   init_fact = Fact.new(value: init)
+  #   state_reactor = StateReactor.new()
+  # end
 
-    #   wrk =
-    #     wrk
-    #     |> Workflow.log_fact(init_fact)
-
-    #   %Workflow{wrk | memory: wrk.memory |> Graph.add_vertex(init_fact)}
-    # end
-  end
+  # defp workflow_of_reducer(
+  #        init,
+  #        {:fn, [],
+  #         [
+  #           {:->, [],
+  #            [
+  #              [{_input_arg_bind, _, _} = input_arg, {_acc_bind, _, _} = acc_arg], rhs
+  #            ]}
+  #         ]}
+  #      ) do
+  #   StateReactor.new()
+  # end
 
   # def new(init, reducers) when is_list(reducers) do
   #   new(init_of_accumulator(ast_init), Enum.map(reducers, &reducer_to_state_reactor/1))
   # end
-
-
 
   # def new(%Rule{} = init, [%Rule{} | _] = reducers) do
   #   # todo: ensure rule reactions always return a `state_produced` event/fact representing the accumulator definition.

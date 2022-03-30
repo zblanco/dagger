@@ -12,21 +12,24 @@ defprotocol Dagger.Workflow.Activation do
   The activation protocol invokes the runnable protocol to evaluate valid steps in that cycle starting with conditionals.
   """
   def activate(node, workflow, fact)
+  def match_or_execute(node)
+
+  # def runnable_connection(node)
+  # def resolved_connection(node)
 end
 
 defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Root do
   alias Dagger.Workflow.Root
+  alias Dagger.Workflow
 
   def activate(%Root{} = root, workflow, fact) do
-    next_runnables =
-      workflow
-      |> Dagger.Workflow.next_steps(root)
-      |> Enum.map(&{&1, fact})
-
     workflow
-    |> Dagger.Workflow.log_fact(fact)
-    |> Dagger.Workflow.add_to_agenda(next_runnables)
+    |> Workflow.log_fact(fact)
+    |> Workflow.prepare_next_generation(fact)
+    |> Workflow.prepare_next_runnables(root, fact)
   end
+
+  def match_or_execute(_root), do: :match
 end
 
 defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Condition do
@@ -45,27 +48,19 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Condition do
         %Workflow{} = workflow,
         %Fact{} = fact
       ) do
-    with true <-
-           try_to_run_work(condition.work, fact.value, condition.arity)
-           |> IO.inspect(label: "did condition work pass for #{condition.hash} : #{fact.hash}?") do
-      satisfied_fact = satisfied_fact(condition, fact)
-
-      next_runnables =
-        workflow
-        |> Workflow.next_steps(condition)
-        |> Enum.map(&{&1, fact})
-
+    if try_to_run_work(condition.work, fact.value, condition.arity) do
       workflow
-      |> Workflow.log_fact(satisfied_fact)
-      |> Workflow.add_to_agenda(next_runnables)
-      |> Workflow.prune_activated_runnable(condition, fact)
+      |> Workflow.prepare_next_runnables(condition, fact)
+      |> Workflow.draw_connection(fact, condition.hash, :satisfied)
+      |> Workflow.mark_runnable_as_ran(condition, fact)
     else
-      _anything_otherwise ->
-        Workflow.prune_activated_runnable(workflow, condition, fact)
+      Workflow.mark_runnable_as_ran(workflow, condition, fact)
     end
   end
 
-  def try_to_run_work(work, fact_value, arity) do
+  def match_or_execute(_condition), do: :match
+
+  defp try_to_run_work(work, fact_value, arity) do
     try do
       run_work(work, fact_value, arity) |> IO.inspect(label: "run work attempt")
     rescue
@@ -99,13 +94,13 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Condition do
     Steps.run(work, fact_value)
   end
 
-  defp satisfied_fact(%Condition{} = condition, %Fact{} = fact) do
-    Fact.new(
-      value: :satisfied,
-      ancestry: {condition.hash, fact.hash},
-      runnable: {condition, fact}
-    )
-  end
+  # defp satisfied_fact(%Condition{} = condition, %Fact{} = fact) do
+  #   Fact.new(
+  #     value: :satisfied,
+  #     ancestry: {condition.hash, fact.hash},
+  #     runnable: {condition, fact}
+  #   )
+  # end
 end
 
 defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Step do
@@ -129,16 +124,14 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Step do
     result_fact =
       Fact.new(value: result, ancestry: {step.hash, fact.hash}, runnable: {step, fact})
 
-    next_runnables =
-      workflow
-      |> Workflow.next_steps(step)
-      |> Enum.map(&{&1, result_fact})
-
     workflow
+    |> Workflow.draw_connection(step.hash, fact, :produced)
     |> Workflow.log_fact(result_fact)
-    |> Workflow.add_to_agenda(next_runnables)
-    |> Workflow.prune_activated_runnable(step, fact)
+    |> Workflow.prepare_next_runnables(step, result_fact)
+    |> Workflow.mark_runnable_as_ran(step, fact)
   end
+
+  def match_or_execute(_step), do: :execute
 end
 
 defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Conjunction do
@@ -157,153 +150,166 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Conjunction do
         %Fact{} = fact
       ) do
     satisfied_conditions =
-      Map.get(workflow.activations, fact.hash) |> IO.inspect(label: "activations so far")
+      Workflow.satisfied_conditions(workflow, fact) |> IO.inspect(label: "satisfied_conditions")
 
     IO.inspect(conj.condition_hashes, label: "required to activate #{conj.hash}")
 
-    if Enum.all?(conj.condition_hashes, &(&1 in satisfied_conditions)) do
-      IO.inspect(conj.hash, label: "is satisfied")
-
-      conjunction_satisfied_fact =
-        Fact.new(value: :satisfied, ancestry: {conj.hash, fact.hash}, runnable: {conj, fact})
-
-      next_runnables =
-        workflow
-        |> Workflow.next_steps(conj)
-        |> Enum.map(&{&1, fact})
+    if conj.hash not in satisfied_conditions and
+         Enum.all?(conj.condition_hashes, &(&1 in satisfied_conditions)) do
+      IO.inspect(conj.hash, label: "conjunction is satisfied")
 
       workflow
-      |> Workflow.log_fact(conjunction_satisfied_fact)
-      |> Workflow.add_to_agenda(next_runnables)
-      |> Workflow.prune_activated_runnable(conj, fact)
+      |> Workflow.prepare_next_runnables(conj, fact)
+      |> Workflow.draw_connection(fact, conj.hash, :satisfied)
+      |> Workflow.mark_runnable_as_ran(conj, fact)
     else
-      Workflow.prune_activated_runnable(workflow, conj, fact)
+      IO.inspect(conj.hash, label: "conjunction not satisfied")
+      Workflow.mark_runnable_as_ran(workflow, conj, fact)
     end
   end
 
-  defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.MemoryAssertion do
-    alias Dagger.Workflow
+  def match_or_execute(_conjunction), do: :match
+end
 
-    alias Dagger.Workflow.{
-      Fact,
-      MemoryAssertion
-    }
+defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.MemoryAssertion do
+  alias Dagger.Workflow
 
-    @spec activate(
-            %Dagger.Workflow.MemoryAssertion{},
-            Dagger.Workflow.t(),
-            Dagger.Workflow.Fact.t()
-          ) :: Dagger.Workflow.t()
-    def activate(
-          %MemoryAssertion{} = ma,
-          %Workflow{} = workflow,
-          %Fact{} = fact
-        ) do
-      with true <- ma.memory_assertion.(workflow.memory) do
-        memory_assertion_satisfied_fact =
-          Fact.new(value: :satisfied, ancestry: {ma.hash, fact.hash}, runnable: {ma, fact})
+  alias Dagger.Workflow.{
+    Fact,
+    MemoryAssertion
+  }
 
-        next_runnables =
-          workflow
-          |> Workflow.next_steps(ma)
-          |> Enum.map(&{&1, fact})
-
-        workflow
-        |> Workflow.log_fact(memory_assertion_satisfied_fact)
-        |> Workflow.add_to_agenda(next_runnables)
-        |> Workflow.prune_activated_runnable(ma, fact)
-      else
-        _anything_otherwise -> Workflow.prune_activated_runnable(workflow, ma, fact)
-      end
+  @spec activate(
+          %Dagger.Workflow.MemoryAssertion{},
+          Dagger.Workflow.t(),
+          Dagger.Workflow.Fact.t()
+        ) :: Dagger.Workflow.t()
+  def activate(
+        %MemoryAssertion{} = ma,
+        %Workflow{} = workflow,
+        %Fact{} = fact
+      ) do
+    if ma.memory_assertion.(workflow.memory) do
+      workflow
+      |> Workflow.prepare_next_runnables(ma, fact)
+      |> Workflow.draw_connection(fact, ma.hash, :satisfied)
+      |> Workflow.mark_runnable_as_ran(ma, fact)
+    else
+      Workflow.mark_runnable_as_ran(workflow, ma, fact)
     end
   end
 
-  defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.StateReactor do
-    alias Dagger.Workflow
+  def match_or_execute(_memory_assertion), do: :match
+end
 
-    alias Dagger.Workflow.{
-      Fact,
-      Steps,
-      StateReactor
-    }
+defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.StateReactor do
+  alias Dagger.Workflow
 
-    @spec activate(%Dagger.Workflow.StateReactor{}, Dagger.Workflow.t(), Dagger.Workflow.Fact.t()) ::
-            Dagger.Workflow.t()
-    def activate(
-          %StateReactor{} = sr,
-          %Workflow{} = workflow,
-          %Fact{} = fact
-        ) do
-      # get last known state of this reactor or use init
-      last_known_state = last_known_state(workflow, sr) || init_fact(sr)
+  alias Dagger.Workflow.{
+    Fact,
+    Steps,
+    StateReactor
+  }
 
+  @spec activate(%Dagger.Workflow.StateReactor{}, Dagger.Workflow.t(), Dagger.Workflow.Fact.t()) ::
+          Dagger.Workflow.t()
+  def activate(
+        %StateReactor{} = sr,
+        %Workflow{} = workflow,
+        %Fact{} = fact
+      ) do
+    last_known_state = last_known_state(workflow, sr)
+
+    unless is_nil(last_known_state) do
       next_state = apply(sr.reactor, [fact.value, last_known_state.value])
 
-      next_state_produced_fact =
-        Fact.new(value: next_state, ancestry: {sr.hash, fact.hash}, runnable: {sr, fact})
-
-      next_runnables =
-        workflow
-        |> Workflow.next_steps(sr)
-        |> Enum.map(&{&1, next_state_produced_fact})
+      next_state_produced_fact = Fact.new(value: next_state, ancestry: {sr.hash, fact.hash})
 
       workflow
+      |> Workflow.prepare_next_runnables(sr, fact)
       |> Workflow.log_fact(next_state_produced_fact)
-      |> Workflow.add_to_agenda(next_runnables)
-      |> Workflow.prune_activated_runnable(sr, fact)
-    end
+      |> Workflow.draw_connection(sr.hash, fact, :produced)
+      |> Workflow.mark_runnable_as_ran(sr, fact)
+    else
+      init_fact = init_fact(sr)
 
-    defp last_known_state(workflow, state_reactor) do
-      workflow.memory
-      |> Graph.out_edges(state_reactor.hash)
-      |> Enum.filter(&(&1.label == :produced and &1.generation == workflow.generation - 1))
-      |> List.first(%{})
-      |> Map.get(:v1)
-    end
+      next_state = apply(sr.reactor, [fact.value, init_fact.value])
 
-    defp init_fact(%StateReactor{init: init, hash: hash}),
-      do: Fact.new(value: init, ancestry: {hash, Steps.fact_hash(init)})
-  end
+      next_state_produced_fact = Fact.new(value: next_state, ancestry: {sr.hash, fact.hash})
 
-  defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Join do
-    alias Dagger.Workflow
-
-    alias Dagger.Workflow.{
-      Fact,
-      Join
-    }
-
-    @spec activate(%Dagger.Workflow.Join{}, Dagger.Workflow.t(), Dagger.Workflow.Fact.t()) ::
-            Dagger.Workflow.t()
-    def activate(
-          %Join{} = join,
-          %Workflow{} = workflow,
-          %Fact{ancestry: {parent_hash, _value_hash}} = fact
-        ) do
-      with true <- Enum.all?(join.joins, &(&1 in Graph.neighbors(workflow.memory, join.hash))) do
-        # for each required parent in :joins build a map of `parent -> fact` by grabbing the
-        # facts for the current generation
-        join_bindings =
-          Enum.reduce(join.joins, %{parent_hash => fact}, fn step_hash, acc ->
-            Map.put_new(acc, step_hash, Workflow.get_current_generation_fact(workflow, step_hash))
-          end)
-
-        join_bindings_fact =
-          Fact.new(value: join_bindings, ancestry: {join.hash, fact.hash}, runnable: {join, fact})
-
-        next_runnables =
-          workflow
-          |> Workflow.next_steps(join)
-          |> Enum.map(&{&1, fact})
-
-        workflow
-        |> Workflow.log_fact(join_bindings_fact)
-        |> Workflow.add_to_agenda(next_runnables)
-        |> Workflow.prune_activated_runnable(join, fact)
-      else
-        _otherwise ->
-          Workflow.prune_activated_runnable(workflow, join, fact)
-      end
+      workflow
+      |> Workflow.log_fact(init_fact)
+      |> Workflow.draw_connection(sr.hash, init_fact, :produced)
+      |> Workflow.prepare_next_runnables(sr, fact)
+      |> Workflow.log_fact(next_state_produced_fact)
+      |> Workflow.draw_connection(sr.hash, next_state_produced_fact, :produced)
+      |> Workflow.mark_runnable_as_ran(sr, fact)
     end
   end
+
+  def match_or_execute(_state_reactor), do: :execute
+
+  defp last_known_state(workflow, state_reactor) do
+    workflow.memory
+    |> Graph.out_edges(state_reactor.hash)
+    # we might want generational nodes ? maybe a property on the edge label of a state produced connection?
+    |> Enum.filter(&(&1.label == :produced and &1.v1.generation == workflow.generation - 1))
+    |> List.first(%{})
+    |> Map.get(:v1)
+  end
+
+  defp init_fact(%StateReactor{init: init, hash: hash}),
+    do: Fact.new(value: init, ancestry: {hash, Steps.fact_hash(init)})
+end
+
+defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Join do
+  alias Dagger.Workflow
+
+  alias Dagger.Workflow.{
+    Fact,
+    Join
+  }
+
+  @spec activate(%Dagger.Workflow.Join{}, Dagger.Workflow.t(), Dagger.Workflow.Fact.t()) ::
+          Dagger.Workflow.t()
+  def activate(
+        %Join{} = join,
+        %Workflow{} = workflow,
+        %Fact{ancestry: {parent_hash, _value_hash}} = fact
+      ) do
+    # a join has n parents that must have produced a fact
+    # a join's parent steps are either part of a runnable (for a partially satisfied join)
+    # or each step has a produced edge to a new fact for whom the current fact is the ancestor
+
+    possible_priors =
+      join.joins
+      |> Enum.map(fn j ->
+        workflow.memory
+        |> Graph.out_edges(j)
+        |> Enum.filter(fn pedge ->
+          pedge.label == :produced and from_same_ancestor(workflow.memory, parent_hash, pedge)
+        end)
+      end)
+      |> Map.new(&{&1.v1, &1.v2})
+
+    if Enum.count(join.joins) == map_size(possible_priors) do
+      join_bindings_fact = Fact.new(value: possible_priors, ancestry: {join.hash, fact.hash})
+
+      workflow
+      |> Workflow.prepare_next_runnables(join, join_bindings_fact)
+      |> Workflow.mark_runnable_as_ran(join, fact)
+
+      # |> Workflow.draw_connection(fact, join.hash, :joined)
+    else
+      Workflow.mark_runnable_as_ran(workflow, join, fact)
+    end
+  end
+
+  defp from_same_ancestor(memory, parent_hash, %Graph.Edge{label: :produced} = produced_edge) do
+    memory
+    |> Graph.in_edges(produced_edge.v1)
+    |> Enum.any?(&(&1.label == :runnable and &1.v1.hash == parent_hash))
+  end
+
+  def match_or_execute(_join), do: :match
 end

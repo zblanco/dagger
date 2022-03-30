@@ -293,6 +293,79 @@ defmodule WorkflowTest do
     end
   end
 
+  describe "stateful workflow models" do
+    test "joins are steps where many parent" do
+      join_with_1_dependency =
+        Dagger.workflow(
+          name: "workflow with joins",
+          steps: [
+            {[Dagger.step(fn num -> num * 2 end), Dagger.step(fn num -> num * 3 end)],
+             [
+               Dagger.step(fn num_1, num_2 -> num_1 * num_2 end)
+             ]}
+          ]
+        )
+
+      assert match?(%Workflow{}, join_with_1_dependency)
+
+      j_1 =
+        join_with_1_dependency
+        |> Workflow.plan_eagerly(2)
+
+
+      assert Enum.count(Workflow.next_runnables(j_1)) == 2
+
+      j_1_runnables_after_reaction =
+        j_1
+        |> Workflow.react()
+        |> Workflow.next_runnables()
+
+      assert Enum.count(j_1_runnables_after_reaction) == 1
+
+      assert (24 in j_1_runnables_after_reaction) |> Workflow.react() |> Workflow.raw_reactions()
+
+      join_with_many_dependencies =
+        Dagger.workflow(
+          name: "workflow with joins",
+          steps: [
+            {[Dagger.step(fn num -> num * 2 end), Dagger.step(fn num -> num * 3 end)],
+             [
+               Dagger.step(fn num_1, num_2 -> num_1 * num_2 end),
+               Dagger.step(fn num_1, num_2 -> num_1 + num_2 end),
+               Dagger.step(fn num_1, num_2 -> num_2 - num_1 end)
+             ]}
+          ]
+        )
+
+      assert match?(%Workflow{}, join_with_many_dependencies)
+
+      assert join_with_many_dependencies
+             |> Workflow.plan(2)
+             |> Workflow.next_runnables()
+             |> Enum.count() == 2
+
+      assert join_with_many_dependencies
+             |> Workflow.react(2)
+             |> Workflow.next_runnables()
+             |> Enum.count() == 3
+
+      assert join_with_many_dependencies
+             |> Workflow.react_until_satisfied(2)
+             |> Workflow.reactions()
+             |> Enum.count() == 5
+
+      assert (24 in j_1_runnables_after_reaction) |> Workflow.react() |> Workflow.raw_reactions()
+      assert (10 in j_1_runnables_after_reaction) |> Workflow.react() |> Workflow.raw_reactions()
+      assert (2 in j_1_runnables_after_reaction) |> Workflow.react() |> Workflow.raw_reactions()
+    end
+
+    test "stateful rules" do
+    end
+
+    test "accumulations" do
+    end
+  end
+
   # describe "workflow activation protocol interactions" do
   #   test "a join activates when its parent steps have produced its required facts combining the two steps in fact with binding context" do
   #     wrk =
@@ -416,10 +489,13 @@ defmodule WorkflowTest do
       text_processing_workflow
       |> Workflow.react_until_satisfied("anybody want a peanut?")
       |> Workflow.reactions()
-
     end
 
     test "a stateless pipeline workflow can be attached to another workflow as a dependent step" do
+      assert false
+    end
+
+    test "a rule can be triggered from an accumulation event" do
       assert false
     end
   end

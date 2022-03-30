@@ -220,11 +220,27 @@ defmodule Dagger do
       {%Step{} = step, _dependent_steps} = parent_and_children, wrk ->
         wrk = Workflow.add_step(wrk, step)
         add_dependent_steps(parent_and_children, wrk)
+
+      {[_step | _] = parent_steps, dependent_steps}, wrk ->
+        wrk = Enum.reduce(parent_steps, wrk, fn step, wrk -> Workflow.add_step(wrk, step) end)
+
+        join =
+          parent_steps
+          |> Enum.map(& &1.hash)
+          |> Workflow.Join.new()
+
+        wrk = Workflow.add_step(wrk, parent_steps, join)
+
+        add_dependent_steps({join, dependent_steps}, wrk)
     end)
   end
 
   defp add_dependent_steps({parent_step, dependent_steps}, workflow) do
     Enum.reduce(dependent_steps, workflow, fn
+      {[_step | _] = parent_steps, _dependent_steps} = parents_and_children, wrk ->
+        wrk = Enum.reduce(parent_steps, wrk, fn step, wrk -> Workflow.add_step(wrk, step) end)
+        add_dependent_steps(parents_and_children, wrk)
+
       {step, _dependent_steps} = parent_and_children, wrk ->
         wrk = Workflow.add_step(wrk, parent_step, step)
         add_dependent_steps(parent_and_children, wrk)

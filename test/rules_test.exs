@@ -263,14 +263,5 @@ defmodule RulesTest do
       assert Rule.check(rule_from_guard_logic, :potato) == true
       assert Rule.run(rule_from_guard_logic, "potato") == "potato!!"
     end
-
-    test "a rule with more than one clause is invalid and results in an error" do
-      # todo change test to assert raising a custom exception
-      assert {:error, "A rule can have only one clause"} ==
-               Dagger.rule(fn
-                 :potato -> "potato"
-                 :tomato -> "tomato"
-               end)
-    end
   end
 end

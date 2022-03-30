@@ -188,8 +188,7 @@ defmodule Dagger.Workflow.Rule do
          arity,
          _context
        ) do
-    {lhs, rhs} =
-      expression = Steps.expression_of(captured_function) |> IO.inspect(label: "expression_of")
+    {lhs, rhs} = expression = Steps.expression_of(captured_function)
 
     conditions =
       Enum.map(lhs, fn condition ->
@@ -275,17 +274,12 @@ defmodule Dagger.Workflow.Rule do
          arity,
          _context
        ) do
-    IO.inspect(expression, label: "expression for unguarded anonymous function")
-    IO.inspect(Macro.to_string(expression), label: "expression as string")
-
     lhs_match_fun_ast =
       {:fn, [],
        [
          {:->, [], [[lhs], true]},
          {:->, [], [[{:_otherwise, [if_undefined: :apply], Elixir}], false]}
        ]}
-
-    IO.inspect(Macro.to_string(lhs_match_fun_ast), label: "lhs_match_fun_ast to_string")
 
     match_fun =
       lhs_match_fun_ast
@@ -407,7 +401,6 @@ defmodule Dagger.Workflow.Rule do
          {:fn, _meta, [{:->, _, [_lhs, _rhs]}]} = quoted_fun_expression,
          _arity
        ) do
-    IO.inspect(Macro.to_string(quoted_fun_expression), label: "quoted_fun_expression rhs")
     {fun, _} = Code.eval_quoted(quoted_fun_expression)
     Step.new(work: fun)
   end
@@ -417,7 +410,6 @@ defmodule Dagger.Workflow.Rule do
   defp reaction_step_of_rhs({_lhs, rhs}, 0) do
     quoted_rhs = {:fn, [], [{:->, [], [[{:_, [], Elixir}], rhs]}]}
 
-    IO.inspect(Macro.to_string(quoted_rhs), label: "rhs as string for 0 arity rewrite")
     {fun, _} = Code.eval_quoted(quoted_rhs)
     Step.new(work: fun)
   end
@@ -431,24 +423,18 @@ defmodule Dagger.Workflow.Rule do
        ) do
     quoted_rhs = {:fn, [], [{:->, [], [lhs, rhs]}]}
 
-    IO.inspect(Macro.to_string(quoted_rhs), label: "rhs as string for arity 1 rewrite")
     {fun, _} = Code.eval_quoted(quoted_rhs)
     Step.new(work: fun)
   end
 
-  defp reaction_step_of_rhs({nil, {:fn, _, [{:->, _, [_lhs_of_rhs, _]}]} = rhs} = expression, 1) do
-    IO.inspect(expression, label: "expression")
-
-    IO.inspect(Macro.to_string(rhs), label: "rhs as string for arity 1 rewrite")
+  defp reaction_step_of_rhs({nil, {:fn, _, [{:->, _, [_lhs_of_rhs, _]}]} = rhs} = _expression, 1) do
     {fun, _} = Code.eval_quoted(rhs)
     Step.new(work: fun)
   end
 
-  defp reaction_step_of_rhs({nil, rhs} = expression, 1) do
-    IO.inspect(expression, label: "expression")
+  defp reaction_step_of_rhs({nil, rhs} = _expression, 1) do
     quoted_rhs = {:fn, [], [{:->, [], [[{:_any, [], nil}], rhs]}]}
 
-    IO.inspect(Macro.to_string(quoted_rhs), label: "rhs as string for arity 1 rewrite")
     {fun, _} = Code.eval_quoted(quoted_rhs)
     Step.new(work: fun)
   end
@@ -457,34 +443,28 @@ defmodule Dagger.Workflow.Rule do
          {[] = _lhs_conditions, {:fn, _, [{:->, _, [_lhs_of_rhs, _]}]} = rhs},
          1
        ) do
-    IO.inspect(Macro.to_string(rhs), label: "rhs as string for arity 1 rewrite")
     {fun, _} = Code.eval_quoted(rhs)
     Step.new(work: fun)
   end
 
-  defp reaction_step_of_rhs({lhs_conditions, rhs} = expression, 1) when is_list(lhs_conditions) do
-    IO.inspect(expression, label: "expression for list of conditions")
+  defp reaction_step_of_rhs({lhs_conditions, rhs} = _expression, 1)
+       when is_list(lhs_conditions) do
     quoted_rhs = {:fn, [], [{:->, [], [[{:_any, [], nil}], rhs]}]}
 
-    IO.inspect(Macro.to_string(quoted_rhs), label: "rhs as string for arity 1 rewrite")
     {fun, _} = Code.eval_quoted(quoted_rhs)
     Step.new(work: fun)
   end
 
-  defp reaction_step_of_rhs({{:&, _, [{:/, _, _}]} = _captured_fun, rhs} = expression, 1) do
-    IO.inspect(expression, label: "expression")
+  defp reaction_step_of_rhs({{:&, _, [{:/, _, _}]} = _captured_fun, rhs} = _expression, 1) do
     quoted_rhs = {:fn, [], [{:->, [], [[{:_, [], Elixir}], rhs]}]}
 
-    IO.inspect(Macro.to_string(quoted_rhs), label: "rhs as string for arity 1 rewrite!")
     {fun, _} = Code.eval_quoted(quoted_rhs)
     Step.new(work: fun)
   end
 
-  defp reaction_step_of_rhs({lhs, rhs} = expression, 1) do
-    IO.inspect(expression, label: "expression")
+  defp reaction_step_of_rhs({lhs, rhs} = _expression, 1) do
     quoted_rhs = {:fn, [], [{:->, [], [[lhs], rhs]}]}
 
-    IO.inspect(Macro.to_string(quoted_rhs), label: "rhs as string for arity 1 rewrite!")
     {fun, _} = Code.eval_quoted(quoted_rhs)
     Step.new(work: fun)
   end
@@ -493,14 +473,12 @@ defmodule Dagger.Workflow.Rule do
     quoted_rhs =
       {:fn, [], [{:->, [], [[Enum.map(1..arity, fn _arg_pos -> {:_, [], Elixir} end)], rhs]}]}
 
-    IO.inspect(Macro.to_string(quoted_rhs), label: "rhs as string for n arity rewrite")
     {fun, _} = Code.eval_quoted(quoted_rhs)
     Step.new(work: fun)
   end
 
   defp reaction_step_of_rhs(some_term, _arity) do
     quoted_rhs = {:fn, [], [{:->, [], [[], some_term]}]}
-    IO.inspect(Macro.to_string(quoted_rhs), label: "rhs as string for arbitrary term")
     {fun, _} = Code.eval_quoted(quoted_rhs)
     Step.new(work: fun)
   end
@@ -508,18 +486,16 @@ defmodule Dagger.Workflow.Rule do
   defp leaf_to_reaction_edges(g, arity_condition, reaction) do
     Graph.Reducers.Dfs.reduce(g, [], fn
       ^arity_condition, leaf_edges ->
-        Graph.out_degree(g, arity_condition) |> IO.inspect(label: "out_degree of arity_condition")
+        Graph.out_degree(g, arity_condition)
         {:next, leaf_edges}
 
       %Dagger.Workflow.Root{}, leaf_edges ->
         {:next, leaf_edges}
 
       v, leaf_edges ->
-        Graph.out_degree(g, v) |> IO.inspect(label: "out_degree of v: #{v.hash}")
+        Graph.out_degree(g, v)
 
         if Graph.out_degree(g, v) == 0 do
-          IO.inspect(v, label: "leaf edge found")
-
           {:next, [Graph.Edge.new(v, reaction, label: {v.hash, reaction.hash}) | leaf_edges]}
         else
           {:next, leaf_edges}
@@ -570,11 +546,7 @@ defmodule Dagger.Workflow.Rule do
             reaction.name,
             function_name(reaction.work)
           ])
-          |> Graph.add_edges(
-            leaf_to_reaction_edges(flow, arity_condition, reaction)
-            |> IO.inspect(label: "leaf_to_reaction_edges")
-          )
-        # |> Graph.add_edges(Enum.map(conditions, &{arity_condition, &1}))
+          |> Graph.add_edges(leaf_to_reaction_edges(flow, arity_condition, reaction))
     }
 
     %{wrapped_wrk | workflow: wrk}
@@ -586,10 +558,6 @@ defmodule Dagger.Workflow.Rule do
            possible_children: possible_children
          } = wrapped_wrk
        ) do
-    IO.inspect(ast, label: "or ast")
-    IO.inspect(lhs_of_or, label: "lhs_of_or")
-    IO.inspect(rhs_of_or, label: "rhs_of_parent")
-
     lhs_child_cond = Map.fetch!(possible_children, lhs_of_or)
     rhs_child_cond = Map.fetch!(possible_children, rhs_of_or)
 
@@ -604,8 +572,6 @@ defmodule Dagger.Workflow.Rule do
          {:and, _meta, [lhs_of_and | [rhs_of_and | _]]} = ast,
          %{workflow: wrk, possible_children: possible_children} = wrapped_wrk
        ) do
-    IO.inspect(ast, label: "and ast")
-
     lhs_child_cond = Map.fetch!(possible_children, lhs_of_and)
     rhs_child_cond = Map.fetch!(possible_children, rhs_of_and)
 
@@ -651,8 +617,6 @@ defmodule Dagger.Workflow.Rule do
        )
        when is_atom(expr) and not is_nil(children) do
     if expr in @boolean_expressions or binary_part(to_string(expr), 0, 2) === "is" do
-      IO.inspect(expression, label: "expression")
-
       match_fun_ast =
         {:fn, [],
          [
@@ -666,10 +630,6 @@ defmodule Dagger.Workflow.Rule do
            {:->, [],
             [Enum.map(binds, fn {bind, _meta, cont} -> {:"_#{bind}", [], cont} end), false]}
          ]}
-
-      IO.inspect(match_fun_ast, label: "match_fun_ast")
-
-      IO.inspect(Macro.to_string(match_fun_ast), label: "match_fun_ast to_string")
 
       match_fun =
         match_fun_ast

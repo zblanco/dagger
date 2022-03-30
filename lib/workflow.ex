@@ -26,7 +26,6 @@ defmodule Dagger.Workflow do
   """
   alias Dagger.Workflow.{
     Rule,
-    Accumulator,
     Step,
     Steps,
     Fact,
@@ -86,7 +85,7 @@ defmodule Dagger.Workflow do
     struct!(__MODULE__, params)
     |> Map.put(:flow, flow)
     |> Map.put(:activations, %{})
-    |> Map.put(:memory, Graph.new())
+    |> Map.put(:memory, Graph.new(vertex_identifier: &Steps.vertex_id_of/1))
     |> Map.put(:agenda, Agenda.new())
   end
 
@@ -176,12 +175,6 @@ defmodule Dagger.Workflow do
     Activation.activate(root(), wrk, fact)
   end
 
-  # def plan(%__MODULE__{} = wrk, facts) when is_list(facts) do
-  #   Enum.reduce(facts, wrk, fn fact, wrk ->
-  #     plan(wrk, fact)
-  #   end)
-  # end
-
   def plan(%__MODULE__{} = wrk, raw_fact) do
     plan(wrk, Fact.new(value: raw_fact))
   end
@@ -205,24 +198,9 @@ defmodule Dagger.Workflow do
   Goal? To determine if the workflow is runnable once terminated to only Step runnables.
   """
   def plan_eagerly(%__MODULE__{} = workflow, %Fact{} = input_fact) do
-    # wrk = plan(workflow, input_fact)
-
-    # wrk =
     workflow
     |> plan(input_fact)
     |> activate_through_possible_matches()
-
-    # wrk
-    # |> next_match_runnables()
-    # |> Enum.reduce_while(wrk, fn _runnable, wrk ->
-    #   wrk = plan(wrk)
-
-    #   if Agenda.any_match_phase_runnables?(wrk.agenda) do
-    #     {:cont, plan(wrk)}
-    #   else
-    #     {:halt, wrk}
-    #   end
-    # end)
   end
 
   def plan_eagerly(%__MODULE__{} = wrk, raw_fact) do
@@ -233,7 +211,7 @@ defmodule Dagger.Workflow do
     activate_through_possible_matches(
       wrk,
       next_match_runnables(wrk),
-      Agenda.any_match_phase_runnables?(wrk.agenda)
+      any_match_phase_runnables?(wrk)
     )
   end
 
@@ -257,8 +235,35 @@ defmodule Dagger.Workflow do
     wrk
   end
 
-  def is_runnable?(%__MODULE__{agenda: agenda}) do
-    Agenda.any_runnables_for_next_cycle?(agenda)
+  defp any_match_phase_runnables?(%__MODULE__{memory: memory, generations: generation}) do
+    generation_fact =
+      memory
+      |> Graph.in_neighbors(generation)
+      |> List.first()
+
+    memory
+    |> Graph.out_edges(generation_fact)
+    |> Enum.any?(fn edge ->
+      edge.label == :matchable
+    end)
+  end
+
+  # def is_runnable?(%__MODULE__{agenda: agenda}) do
+  #   Agenda.any_runnables_for_next_cycle?(agenda)
+  # end
+
+  def is_runnable?(%__MODULE__{memory: memory, generations: generation}) do
+    generation_fact =
+      memory
+      |> Graph.in_neighbors(generation)
+      |> List.first()
+
+    memory
+    |> Graph.out_edges(generation_fact)
+    |> Enum.any?(fn edge ->
+      edge.label == :runnable and
+        not Enum.any?(Graph.out_edges(memory, edge.v2), &(&1.label == :produced))
+    end)
   end
 
   def prune_activated_runnable(%__MODULE__{agenda: agenda} = wrk, node, fact) do
@@ -268,37 +273,65 @@ defmodule Dagger.Workflow do
     }
   end
 
-  def log_fact(
-        %__MODULE__{activations: activations, facts: facts, memory: memory} = wrk,
-        %Fact{value: :satisfied, ancestry: {condition_hash, fact_hash}} = fact
-      ) do
-    activations_for_fact =
-      activations
-      |> Map.get(fact_hash, MapSet.new([condition_hash]))
-      |> MapSet.put(condition_hash)
-
-    memory = Graph.add_edge(memory, condition_hash, fact_hash, label: :satisfied)
-
-    %__MODULE__{
-      wrk
-      | # do we ever want the inverse hash table (cond_hash, set<fact_hashe>) or both?
-        activations: Map.put(activations, fact_hash, activations_for_fact),
-        memory: memory,
-        facts: [fact | facts]
-    }
+  def draw_connection(%__MODULE__{memory: memory} = wrk, node_1, node_2, connection) do
+    %__MODULE__{wrk | memory: Graph.add_edge(memory, node_1, node_2, label: connection)}
   end
 
-  def log_fact(%__MODULE__{facts: facts} = wrk, %Fact{} = fact) do
-    %__MODULE__{wrk | facts: [fact | facts]}
+  def log_fact(%__MODULE__{facts: facts, memory: memory} = wrk, %Fact{} = fact) do
+    %__MODULE__{wrk | facts: [fact | facts], memory: Graph.add_vertex(memory, fact)}
+  end
+
+  @spec prepare_next_generation(Workflow.t(), Fact.t()) :: Workflow.t()
+  @doc false
+  def prepare_next_generation(%__MODULE__{} = workflow, fact) do
+    next_generation = workflow.generations + 1
+
+    workflow
+    |> Map.put(:generations, next_generation)
+    |> draw_connection(fact, next_generation, :generation)
+  end
+
+  @spec prepare_next_runnables(Workflow.t(), any(), Fact.t()) :: any
+  @doc false
+  def prepare_next_runnables(%__MODULE__{} = workflow, node, fact) do
+    workflow
+    |> next_steps(node)
+    |> Enum.reduce(workflow, fn step, wrk ->
+      draw_connection(wrk, fact, step.hash, connection_for_activatable(step))
+    end)
+  end
+
+  defp connection_for_activatable(step) do
+    case Activation.match_or_execute(step) do
+      :match -> :matchable
+      :execute -> :runnable
+    end
   end
 
   @doc false
-  def get_current_generation_fact(%__MODULE__{} = workflow, step_hash) do
-    workflow.facts
-    |> Map.get(workflow.generations)
-    |> Map.get(step_hash)
+  def mark_runnable_as_ran(%__MODULE__{memory: memory} = workflow, step, fact) do
+    memory =
+      case Graph.update_labelled_edge(memory, fact, step.hash, connection_for_activatable(step),
+             label: :ran
+           ) do
+        %Graph{} = memory -> memory
+        {:error, :no_such_edge} -> memory
+      end
+
+    %__MODULE__{
+      workflow
+      | memory: memory
+    }
   end
 
+  @doc false
+  def satisfied_conditions(%__MODULE__{memory: memory}, %Fact{} = fact) do
+    for %Graph.Edge{} = edge <- Graph.out_edges(memory, fact),
+        edge.label == :satisfied,
+        do: edge.v2
+  end
+
+  @spec add_to_agenda(Workflow.t(), maybe_improper_list) :: Workflow.t()
   def add_to_agenda(%__MODULE__{agenda: agenda} = wrk, runnables) when is_list(runnables) do
     %__MODULE__{
       wrk
@@ -353,13 +386,32 @@ defmodule Dagger.Workflow do
   All Runnables returned are independent and can be run in parallel then fed back into the Workflow
   without wait or delays to get the same results.
   """
-  def next_runnables(%__MODULE__{agenda: agenda}), do: Agenda.next_runnables(agenda)
+  # def next_runnables(%__MODULE__{agenda: agenda}), do: Agenda.next_runnables(agenda)
+  def next_runnables(%__MODULE__{flow: flow, memory: memory, generations: generation}) do
+    current_generation_fact =
+      memory
+      |> Graph.in_neighbors(generation)
+      |> List.first()
 
-  @doc """
-  Returns the next lhs or match runnables i.e. the work, input pairs that can activate a condition or conjunction
-  for the next cycle.
-  """
-  def next_match_runnables(%__MODULE__{agenda: agenda}), do: Agenda.next_match_runnables(agenda)
+    for %Graph.Edge{} = edge <- Graph.out_edges(memory, current_generation_fact),
+        edge.label == :runnable do
+      {Map.get(flow.vertices, edge.v2), current_generation_fact}
+    end
+  end
+
+  defp next_match_runnables(%__MODULE__{flow: flow, memory: memory, generations: generation}) do
+    current_generation_fact =
+      memory
+      |> Graph.in_neighbors(generation)
+      |> List.first()
+
+    for %Graph.Edge{} = edge <- Graph.out_edges(memory, current_generation_fact),
+        edge.label == :matchable do
+      {Map.get(flow.vertices, edge.v2), current_generation_fact}
+    end
+  end
+
+  # def next_match_runnables(%__MODULE__{agenda: agenda}), do: Agenda.next_match_runnables(agenda)
 
   def next_steps(%__MODULE__{flow: flow}, parent_step) do
     next_steps(flow, parent_step)
@@ -380,7 +432,6 @@ defmodule Dagger.Workflow do
         %__MODULE__{} = workflow,
         %Rule{} = rule
       ) do
-    IO.inspect(rule)
     workflow_of_rule = Dagger.Flowable.to_workflow(rule)
     merge(workflow, workflow_of_rule)
   end
@@ -470,6 +521,13 @@ defmodule Dagger.Workflow do
             label: {to_string(parent_step.hash), to_string(child_step.hash)}
           )
     }
+  end
+
+  def add_step(%__MODULE__{} = workflow, parent_steps, %{} = child_step)
+      when is_list(parent_steps) do
+    Enum.reduce(parent_steps, workflow, fn parent_step, wrk ->
+      add_step(wrk, parent_step, child_step)
+    end)
   end
 
   def add_step(%__MODULE__{} = workflow, parent_step_name, child_step) do
