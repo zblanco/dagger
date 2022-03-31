@@ -258,13 +258,12 @@ defmodule DaggerTest do
         Dagger.accumulator(
           name: "adds integers of some factor to its state up until 30 then stops",
           init: 0,
-          reducer:
-            fn
-              num, state when is_integer(num) and state >= 0 and state < 10 -> state + num * 1
-              num, state when is_integer(num) and state >= 10 and state < 20 -> state + num * 2
-              num, state when is_integer(num) and state >= 20 and state < 30 -> state + num * 3
-              _num, state -> state
-            end
+          reducer: fn
+            num, state when is_integer(num) and state >= 0 and state < 10 -> state + num * 1
+            num, state when is_integer(num) and state >= 10 and state < 20 -> state + num * 2
+            num, state when is_integer(num) and state >= 20 and state < 30 -> state + num * 3
+            _num, state -> state
+          end
         )
 
       assert match?(%Accumulator{}, accumulator)

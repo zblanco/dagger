@@ -104,8 +104,8 @@ defmodule Dagger.Workflow do
   @doc """
   Cycles eagerly through a prepared agenda in the match phase.
   """
-  def react(%__MODULE__{agenda: %Agenda{cycles: cycles}} = wrk) when cycles > 0 do
-    Enum.reduce(Map.values(wrk.agenda.runnables), wrk, fn {node, fact}, wrk ->
+  def react(%__MODULE__{generations: generations} = wrk) when generations > 0 do
+    Enum.reduce(next_runnables(wrk), wrk, fn {node, fact}, wrk ->
       Activation.activate(node, wrk, fact)
     end)
   end
@@ -150,7 +150,7 @@ defmodule Dagger.Workflow do
     Enum.reduce_while(next_runnables(workflow), workflow, fn {node, fact} = _runnable, wrk ->
       wrk = Activation.activate(node, wrk, fact)
 
-      if Agenda.any_runnables_for_next_cycle?(wrk.agenda) do
+      if is_runnable?(wrk) do
         {:cont, wrk}
       else
         {:halt, wrk}
@@ -266,6 +266,24 @@ defmodule Dagger.Workflow do
     end)
   end
 
+  def can_react?(%__MODULE__{memory: memory, generations: generation}) do
+    generation_fact =
+      memory
+      |> Graph.in_neighbors(generation)
+      |> List.first()
+
+    memory
+    |> Graph.out_edges(generation_fact)
+    |> Enum.any?(fn edge ->
+      (edge.label == :runnable or
+         edge.label == :matchable) and
+        not Enum.any?(
+          Graph.out_edges(memory, edge.v2),
+          &(&1.label == :produced or &1.label == :satisfied)
+        )
+    end)
+  end
+
   def prune_activated_runnable(%__MODULE__{agenda: agenda} = wrk, node, fact) do
     %__MODULE__{
       wrk
@@ -301,6 +319,7 @@ defmodule Dagger.Workflow do
     end)
   end
 
+  # considering an alternate activation protocol that defers the connection labeling transitions to the implementer - this is just a "make it work" solution
   defp connection_for_activatable(step) do
     case Activation.match_or_execute(step) do
       :match -> :matchable
@@ -360,9 +379,6 @@ defmodule Dagger.Workflow do
   """
   def reactions(%__MODULE__{} = wrk) do
     wrk.facts
-    |> Enum.filter(fn %Fact{} = fact ->
-      fact.value != :satisfied and not is_nil(fact.ancestry)
-    end)
   end
 
   @spec facts(Dagger.Workflow.t()) :: list(Dagger.Workflow.Fact.t())
@@ -372,11 +388,13 @@ defmodule Dagger.Workflow do
   def facts(%__MODULE__{} = wrk), do: wrk.facts
 
   @spec matches(Dagger.Workflow.t()) :: list(Dagger.Workflow.Fact.t())
-  def matches(%__MODULE__{} = wrk) do
-    wrk.facts
-    |> Enum.filter(fn %Fact{} = fact ->
-      fact.value == :satisfied and not is_nil(fact.ancestry)
-    end)
+  def matches(%__MODULE__{memory: memory, generations: generation}) do
+    current_generation_fact = fact_for_generation(memory, generation)
+
+    for %Graph.Edge{} = edge <- Graph.out_edges(memory, current_generation_fact),
+        edge.label == :matchable do
+      edge.v2
+    end
   end
 
   @spec next_runnables(Dagger.Workflow.t()) :: list({any(), Dagger.Workflow.Fact.t()})
@@ -388,10 +406,7 @@ defmodule Dagger.Workflow do
   """
   # def next_runnables(%__MODULE__{agenda: agenda}), do: Agenda.next_runnables(agenda)
   def next_runnables(%__MODULE__{flow: flow, memory: memory, generations: generation}) do
-    current_generation_fact =
-      memory
-      |> Graph.in_neighbors(generation)
-      |> List.first()
+    current_generation_fact = fact_for_generation(memory, generation)
 
     for %Graph.Edge{} = edge <- Graph.out_edges(memory, current_generation_fact),
         edge.label == :runnable do
@@ -400,15 +415,18 @@ defmodule Dagger.Workflow do
   end
 
   defp next_match_runnables(%__MODULE__{flow: flow, memory: memory, generations: generation}) do
-    current_generation_fact =
-      memory
-      |> Graph.in_neighbors(generation)
-      |> List.first()
+    current_generation_fact = fact_for_generation(memory, generation)
 
     for %Graph.Edge{} = edge <- Graph.out_edges(memory, current_generation_fact),
         edge.label == :matchable do
       {Map.get(flow.vertices, edge.v2), current_generation_fact}
     end
+  end
+
+  defp fact_for_generation(memory, generation) do
+    memory
+    |> Graph.in_neighbors(generation)
+    |> List.first()
   end
 
   # def next_match_runnables(%__MODULE__{agenda: agenda}), do: Agenda.next_match_runnables(agenda)

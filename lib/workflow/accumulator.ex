@@ -38,11 +38,12 @@ defmodule Dagger.Workflow.Accumulator do
 
   ```
   """
-  alias Dagger.Workflow.Rule
-  alias Dagger.Workflow
-  alias Dagger.Workflow.Steps
-  alias Dagger.Workflow.Fact
-  alias Dagger.Workflow.StateReactor
+
+  # alias Dagger.Workflow.Rule
+  # alias Dagger.Workflow
+  # alias Dagger.Workflow.Steps
+  # alias Dagger.Workflow.Fact
+  # alias Dagger.Workflow.StateReactor
 
   defstruct [
     :name,

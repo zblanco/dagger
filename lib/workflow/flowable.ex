@@ -60,6 +60,7 @@ defimpl Dagger.Flowable, for: Dagger.Workflow.Accumulator do
   def to_workflow(%Dagger.Workflow.Accumulator{} = acc) do
     acc.workflow
   end
+
   # def to_workflow(%Dagger.Workflow.Accumulator{
   #       init: init,
   #       reducers: reducers

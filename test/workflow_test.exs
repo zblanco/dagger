@@ -130,6 +130,79 @@ defmodule WorkflowTest do
      ]}
   end
 
+  describe "workflow api" do
+    test "reactions/1 returns a list of facts ingested or produced throughout the workflow" do
+      wrk =
+        Dagger.workflow(
+          name: "test",
+          steps: [
+            Dagger.step(fn num -> num * 2 end),
+            Dagger.step(fn num -> num * 3 end),
+            Dagger.step(fn num -> num * 4 end)
+          ]
+        )
+
+      reactions =
+        wrk
+        |> Workflow.plan_eagerly(10)
+        |> Workflow.react()
+        |> Workflow.reactions()
+
+      assert match?([%Fact{} | _], reactions)
+      assert Enum.count(reactions) == 4
+
+      for fact <- reactions, do: assert(fact.value in [10, 20, 30, 40])
+    end
+
+    test "raw_reactions/1 returns a list of fact values ingested or produced throughout the workflow" do
+      wrk =
+        Dagger.workflow(
+          name: "test",
+          steps: [
+            Dagger.step(fn num -> num * 2 end),
+            Dagger.step(fn num -> num * 3 end),
+            Dagger.step(fn num -> num * 4 end)
+          ]
+        )
+
+      reactions =
+        wrk
+        |> Workflow.plan_eagerly(10)
+        |> Workflow.react()
+        |> Workflow.raw_reactions()
+
+      assert match?([_ | _], reactions)
+      assert Enum.count(reactions) == 4
+
+      for reaction <- reactions, do: assert(reaction in [10, 20, 30, 40])
+    end
+
+    test "matches/1 returns a list of matched conditions throughout the workflow evaluation" do
+      wrk =
+        Dagger.workflow(
+          name: "test",
+          rules: [
+            Dagger.rule(fn
+              :potato -> "potato!"
+            end),
+            Dagger.rule(fn
+              :tomato -> "tomato!"
+            end)
+          ]
+        )
+
+      matches =
+        wrk
+        |> Workflow.plan_eagerly(:potato)
+        |> Workflow.matches()
+
+      assert match?([_ | _], matches)
+      assert Enum.count(matches) == 2
+
+      for match <- matches, do: assert(is_integer(match))
+    end
+  end
+
   describe "workflow construction" do
     test "creating a new workflow" do
       assert match?(%Workflow{}, Workflow.new("workflow"))
@@ -138,40 +211,22 @@ defmodule WorkflowTest do
     test "defining a workflow using the macro/keyword syntax" do
       an_existing_rule = Dagger.rule(fn :bar -> :foo end, name: "barfoo")
 
-      Dagger.workflow(
-        name: "a test workflow",
-        # accumulators: [
-        #   Dagger.accumulator(
-        #     name: "fancy counter",
-        #     init: 0,
-        #     reducers: [
-        #       fn
-        #         num when num <= 10 -> num + 1
-        #         num when num > 10 -> num + 2
-        #         num when num > 20 -> num + 2
-        #       end,
-        #       Dagger.rule(
-        #         fn num when num > 30 -> num + 3 end,
-        #         name: "greater than 30 increment more",
-        #         description: "when the number is greater than 30 we increment by 3"
-        #       )
-        #     ]
-        #   )
-        # ],
-        rules: [
-          Dagger.rule(fn :foo -> :bar end,
-            name: "test rule",
-            description: "a rule description"
-          ),
-          fn
-            :potato -> "potato!"
-            "potato" -> "potato!"
-            :tomato -> "tomato!"
-            item when is_integer(item) and item > 41 and item < 43 -> "fourty two"
-          end,
-          an_existing_rule
-        ]
-      )
+      wrk =
+        Dagger.workflow(
+          name: "a test workflow",
+          rules: [
+            Dagger.rule(fn :foo -> :bar end,
+              name: "test rule",
+              description: "a rule description"
+            ),
+            Dagger.rule(fn
+              :potato -> "potato!"
+            end),
+            an_existing_rule
+          ]
+        )
+
+      assert match?(%Workflow{}, wrk)
     end
 
     # test "adding a step" do
@@ -214,8 +269,8 @@ defmodule WorkflowTest do
 
       wrk = Workflow.plan(workflow, :potato)
 
-      assert Enum.count(Workflow.next_runnables(wrk)) == 1
-      assert Enum.count(wrk.facts) == 1
+      assert Workflow.can_react?(wrk)
+      assert wrk |> Workflow.matches() |> Enum.count() == 1
     end
 
     test "plan/1 evaluates a single layer" do
@@ -294,7 +349,7 @@ defmodule WorkflowTest do
   end
 
   describe "stateful workflow models" do
-    test "joins are steps where many parent" do
+    test "joins are steps where many parents must have ran and produced consequent facts" do
       join_with_1_dependency =
         Dagger.workflow(
           name: "workflow with joins",
@@ -312,13 +367,13 @@ defmodule WorkflowTest do
         join_with_1_dependency
         |> Workflow.plan_eagerly(2)
 
-
       assert Enum.count(Workflow.next_runnables(j_1)) == 2
 
       j_1_runnables_after_reaction =
         j_1
         |> Workflow.react()
         |> Workflow.next_runnables()
+        |> IO.inspect()
 
       assert Enum.count(j_1_runnables_after_reaction) == 1
 
@@ -526,7 +581,6 @@ defmodule WorkflowTest do
             Workflow.plan_eagerly(wrk, Dagger.Runnable.run(step, fact))
           end
         )
-        |> IO.inspect()
     end
   end
 end
