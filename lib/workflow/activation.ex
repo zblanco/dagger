@@ -119,13 +119,13 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Step do
         %Workflow{} = workflow,
         %Fact{} = fact
       ) do
-    result = Steps.run(step.work, fact.value)
+    result = Steps.run(step.work, fact.value, Steps.arity_of(step.work))
 
     result_fact =
       Fact.new(value: result, ancestry: {step.hash, fact.hash}, runnable: {step, fact})
 
     workflow
-    |> Workflow.draw_connection(step.hash, fact, :produced)
+    |> Workflow.draw_connection(step.hash, result_fact, :produced)
     |> Workflow.log_fact(result_fact)
     |> Workflow.prepare_next_runnables(step, result_fact)
     |> Workflow.mark_runnable_as_ran(step, fact)
@@ -275,41 +275,52 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Join do
   def activate(
         %Join{} = join,
         %Workflow{} = workflow,
-        %Fact{ancestry: {parent_hash, _value_hash}} = fact
+        %Fact{ancestry: {_parent_hash, _value_hash}} = fact
       ) do
     # a join has n parents that must have produced a fact
     # a join's parent steps are either part of a runnable (for a partially satisfied join)
     # or each step has a produced edge to a new fact for whom the current fact is the ancestor
 
-    possible_priors =
-      join.joins
-      |> Enum.map(fn j ->
-        workflow.memory
-        |> Graph.out_edges(j)
-        |> Enum.filter(fn pedge ->
-          pedge.label == :produced and from_same_ancestor(workflow.memory, parent_hash, pedge)
-        end)
-      end)
-      |> Map.new(&{&1.v1, &1.v2})
+    workflow = Workflow.draw_connection(workflow, fact, join.hash, :joined)
 
-    if Enum.count(join.joins) == map_size(possible_priors) do
+    possible_priors =
+      workflow.memory
+      |> Graph.in_edges(join.hash)
+      |> Enum.filter(&(&1.label == :joined))
+      |> Enum.map(& &1.v1.value)
+
+    if Enum.count(join.joins) == Enum.count(possible_priors) do
       join_bindings_fact = Fact.new(value: possible_priors, ancestry: {join.hash, fact.hash})
 
-      workflow
-      |> Workflow.prepare_next_runnables(join, join_bindings_fact)
-      |> Workflow.mark_runnable_as_ran(join, fact)
+      workflow =
+        workflow
+        |> Workflow.log_fact(join_bindings_fact)
+        |> Workflow.prepare_next_runnables(join, join_bindings_fact)
 
-      # |> Workflow.draw_connection(fact, join.hash, :joined)
+      workflow.memory
+      |> Graph.in_edges(join.hash)
+      |> Enum.reduce(workflow, fn
+        %{v1: v1, label: :runnable}, wrk ->
+          Workflow.mark_runnable_as_ran(wrk, join, v1)
+
+        %{v1: v1, v2: v2, label: :joined}, wrk ->
+          %Workflow{
+            wrk
+            | memory:
+                wrk.memory |> Graph.update_labelled_edge(v1, v2, :joined, label: :join_satisfied)
+          }
+      end)
+      |> Workflow.draw_connection(join.hash, join_bindings_fact, :produced)
     else
-      Workflow.mark_runnable_as_ran(workflow, join, fact)
+      workflow
     end
   end
 
-  defp from_same_ancestor(memory, parent_hash, %Graph.Edge{label: :produced} = produced_edge) do
-    memory
-    |> Graph.in_edges(produced_edge.v1)
-    |> Enum.any?(&(&1.label == :runnable and &1.v1.hash == parent_hash))
-  end
+  # defp from_same_ancestor(memory, parent_hash, %Graph.Edge{label: :produced} = produced_edge) do
+  #   memory
+  #   |> Graph.in_edges(produced_edge.v1)
+  #   |> Enum.any?(&(&1.label == :ran and &1.v2 == parent_hash))
+  # end
 
-  def match_or_execute(_join), do: :match
+  def match_or_execute(_join), do: :execute
 end

@@ -147,16 +147,32 @@ defmodule Dagger.Workflow do
   end
 
   def react_until_satisfied(%__MODULE__{} = workflow) do
-    Enum.reduce_while(next_runnables(workflow), workflow, fn {node, fact} = _runnable, wrk ->
-      wrk = Activation.activate(node, wrk, fact)
+    do_react_until_satisfied(workflow, is_runnable?(workflow))
 
-      if is_runnable?(wrk) do
-        {:cont, wrk}
-      else
-        {:halt, wrk}
-      end
-    end)
+    # Enum.reduce_while(next_runnables(workflow), workflow, fn {node, fact} = _runnable, wrk ->
+    #   wrk = Activation.activate(node, wrk, fact)
+
+    #   next_runnables(wrk) |> IO.inspect(label: "next_runnables inside reduce")
+    #   is_runnable?(wrk) |> IO.inspect(label: "is_runnable?")
+
+    #   if is_runnable?(wrk) do
+    #     {:cont, wrk}
+    #   else
+    #     {:halt, wrk}
+    #   end
+    # end)
   end
+
+  defp do_react_until_satisfied(%__MODULE__{} = workflow, true = _is_runnable?) do
+    workflow =
+      Enum.reduce(next_runnables(workflow), workflow, fn {node, fact} = _runnable, wrk ->
+        Activation.activate(node, wrk, fact)
+      end)
+
+    do_react_until_satisfied(workflow, is_runnable?(workflow))
+  end
+
+  defp do_react_until_satisfied(%__MODULE__{} = workflow, false = _is_runnable?), do: workflow
 
   @doc """
   For a new set of inputs, `plan/2` prepares the workflow agenda for the next set of reactions by
@@ -236,10 +252,7 @@ defmodule Dagger.Workflow do
   end
 
   defp any_match_phase_runnables?(%__MODULE__{memory: memory, generations: generation}) do
-    generation_fact =
-      memory
-      |> Graph.in_neighbors(generation)
-      |> List.first()
+    generation_fact = fact_for_generation(memory, generation)
 
     memory
     |> Graph.out_edges(generation_fact)
@@ -252,25 +265,25 @@ defmodule Dagger.Workflow do
   #   Agenda.any_runnables_for_next_cycle?(agenda)
   # end
 
-  def is_runnable?(%__MODULE__{memory: memory, generations: generation}) do
-    generation_fact =
-      memory
-      |> Graph.in_neighbors(generation)
-      |> List.first()
+  def is_runnable?(%__MODULE__{memory: memory}) do
+    # generation_fact = fact_for_generation(memory, generation)
 
     memory
-    |> Graph.out_edges(generation_fact)
+    |> Graph.edges()
     |> Enum.any?(fn edge ->
-      edge.label == :runnable and
-        not Enum.any?(Graph.out_edges(memory, edge.v2), &(&1.label == :produced))
+      edge.label == :runnable
     end)
+
+    # memory
+    # |> Graph.out_edges(generation_fact)
+    # |> Enum.any?(fn edge ->
+    #   edge.label == :runnable and
+    #     not Enum.any?(Graph.out_edges(memory, edge.v2), &(&1.label == :produced))
+    # end)
   end
 
   def can_react?(%__MODULE__{memory: memory, generations: generation}) do
-    generation_fact =
-      memory
-      |> Graph.in_neighbors(generation)
-      |> List.first()
+    generation_fact = fact_for_generation(memory, generation)
 
     memory
     |> Graph.out_edges(generation_fact)
@@ -404,13 +417,15 @@ defmodule Dagger.Workflow do
   All Runnables returned are independent and can be run in parallel then fed back into the Workflow
   without wait or delays to get the same results.
   """
-  # def next_runnables(%__MODULE__{agenda: agenda}), do: Agenda.next_runnables(agenda)
-  def next_runnables(%__MODULE__{flow: flow, memory: memory, generations: generation}) do
-    current_generation_fact = fact_for_generation(memory, generation)
+  def next_runnables(%__MODULE__{flow: flow, memory: memory}) do
+    # we can't just traverse this far - we also need to traverse to the last fact
+    # current_generation_fact = fact_for_generation(memory, generation)
 
-    for %Graph.Edge{} = edge <- Graph.out_edges(memory, current_generation_fact),
+    # for %Graph.Edge{} = edge <- Graph.out_edges(memory, current_generation_fact),
+    # danger for big graphs - need a cursor left from last ops - some way to filter over less
+    for %Graph.Edge{} = edge <- Graph.edges(memory),
         edge.label == :runnable do
-      {Map.get(flow.vertices, edge.v2), current_generation_fact}
+      {Map.get(flow.vertices, edge.v2), edge.v1}
     end
   end
 

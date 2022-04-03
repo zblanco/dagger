@@ -296,7 +296,12 @@ defmodule WorkflowTest do
 
       wrk = Workflow.plan(workflow, :potato)
 
-      Workflow.plan(workflow)
+      wrk.memory
+      |> IO.inspect(label: "memory")
+
+      wrk
+      |> Workflow.matches()
+      |> IO.inspect(label: "matches")
     end
   end
 
@@ -373,11 +378,17 @@ defmodule WorkflowTest do
         j_1
         |> Workflow.react()
         |> Workflow.next_runnables()
-        |> IO.inspect()
 
-      assert Enum.count(j_1_runnables_after_reaction) == 1
+      assert Enum.count(j_1_runnables_after_reaction) == 2
 
-      assert (24 in j_1_runnables_after_reaction) |> Workflow.react() |> Workflow.raw_reactions()
+      j_1_runnables_after_third_reaction =
+        j_1
+        |> Workflow.react()
+        |> Workflow.react()
+        |> Workflow.react()
+        |> Workflow.raw_reactions()
+
+      assert 24 in j_1_runnables_after_third_reaction
 
       join_with_many_dependencies =
         Dagger.workflow(
@@ -401,17 +412,18 @@ defmodule WorkflowTest do
 
       assert join_with_many_dependencies
              |> Workflow.react(2)
+             |> Workflow.react()
              |> Workflow.next_runnables()
              |> Enum.count() == 3
 
-      assert join_with_many_dependencies
-             |> Workflow.react_until_satisfied(2)
-             |> Workflow.reactions()
-             |> Enum.count() == 5
+      reacted_join_with_many_dependencies =
+        join_with_many_dependencies
+        |> Workflow.react_until_satisfied(2)
+        |> Workflow.raw_reactions()
 
-      assert (24 in j_1_runnables_after_reaction) |> Workflow.react() |> Workflow.raw_reactions()
-      assert (10 in j_1_runnables_after_reaction) |> Workflow.react() |> Workflow.raw_reactions()
-      assert (2 in j_1_runnables_after_reaction) |> Workflow.react() |> Workflow.raw_reactions()
+      assert 24 in reacted_join_with_many_dependencies
+      assert 10 in reacted_join_with_many_dependencies
+      assert 2 in reacted_join_with_many_dependencies
     end
 
     test "stateful rules" do

@@ -119,7 +119,6 @@ defmodule Dagger.Workflow.Rule do
   end
 
   defp workflow_of_expression({lhs, rhs}, arity, _context) when lhs in [true, nil] do
-    IO.puts("here")
     reaction = reaction_step_of_rhs({lhs, rhs}, arity)
 
     Steps.name_of_expression(rhs)

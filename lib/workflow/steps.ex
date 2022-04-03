@@ -26,6 +26,10 @@ defmodule Dagger.Workflow.Steps do
   def run(work, fact_value) when is_function(work), do: run(work, fact_value, arity_of(work))
 
   def run(work, _fact_value, 0) when is_function(work), do: apply(work, [])
+
+  def run(work, fact_value, arity) when is_function(work) and is_list(fact_value) and arity > 1,
+    do: apply(work, fact_value)
+
   def run(work, fact_value, _arity) when is_function(work), do: apply(work, [fact_value])
 
   def next_steps(flow, parent_step), do: Graph.out_neighbors(flow, parent_step)
