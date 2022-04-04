@@ -330,7 +330,7 @@ defmodule WorkflowTest do
       wrk = Workflow.plan_eagerly(workflow, :potato)
 
       assert Enum.count(Workflow.next_runnables(wrk)) == 1
-      assert Enum.any?(wrk.facts, &match?(%{value: :satisfied}, &1))
+      assert not is_nil(Workflow.matches(wrk))
 
       # a user ought to be able to run a concurrent set of runnables at this point
       # but the api for doing so needs to not require a reduce + activate + agenda cycling as that's too complex

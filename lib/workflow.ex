@@ -148,19 +148,6 @@ defmodule Dagger.Workflow do
 
   def react_until_satisfied(%__MODULE__{} = workflow) do
     do_react_until_satisfied(workflow, is_runnable?(workflow))
-
-    # Enum.reduce_while(next_runnables(workflow), workflow, fn {node, fact} = _runnable, wrk ->
-    #   wrk = Activation.activate(node, wrk, fact)
-
-    #   next_runnables(wrk) |> IO.inspect(label: "next_runnables inside reduce")
-    #   is_runnable?(wrk) |> IO.inspect(label: "is_runnable?")
-
-    #   if is_runnable?(wrk) do
-    #     {:cont, wrk}
-    #   else
-    #     {:halt, wrk}
-    #   end
-    # end)
   end
 
   defp do_react_until_satisfied(%__MODULE__{} = workflow, true = _is_runnable?) do
@@ -400,12 +387,10 @@ defmodule Dagger.Workflow do
   """
   def facts(%__MODULE__{} = wrk), do: wrk.facts
 
-  @spec matches(Dagger.Workflow.t()) :: list(Dagger.Workflow.Fact.t())
-  def matches(%__MODULE__{memory: memory, generations: generation}) do
-    current_generation_fact = fact_for_generation(memory, generation)
-
-    for %Graph.Edge{} = edge <- Graph.out_edges(memory, current_generation_fact),
-        edge.label == :matchable do
+  @doc false
+  def matches(%__MODULE__{memory: memory}) do
+    for %Graph.Edge{} = edge <- Graph.edges(memory),
+        edge.label == :matchable or edge.label == :satisfied do
       edge.v2
     end
   end
@@ -422,7 +407,7 @@ defmodule Dagger.Workflow do
     # current_generation_fact = fact_for_generation(memory, generation)
 
     # for %Graph.Edge{} = edge <- Graph.out_edges(memory, current_generation_fact),
-    # danger for big graphs - need a cursor left from last ops - some way to filter over less
+    # danger for big graphs - need a cursor left from last ops - some way to traverse over less
     for %Graph.Edge{} = edge <- Graph.edges(memory),
         edge.label == :runnable do
       {Map.get(flow.vertices, edge.v2), edge.v1}
