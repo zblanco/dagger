@@ -65,68 +65,12 @@ defmodule WorkflowTest do
         ]
       )
     end
-
-    def counter_accumulator_with_triggers() do
-      # Dagger.accumulator(
-
-      # )
-
-      Workflow.new(name: "counter accumulator")
-      |> Workflow.add_accumulator(
-        Accumulator.new(
-          Dagger.rule(
-            name: "counter accumulator initiation",
-            description:
-              "A rule that reacts to a :start_count message by starting a counter at 0",
-            # trigger for accumulation
-            condition: &Counting.initiator/1,
-            # sets initial state (initial state wants the initiating fact - conditions just activate)
-            reaction: &Counting.initiation/1
-          ),
-          # state reactors match on both current state AND other conditions
-          [
-            Dagger.rule(
-              name: "counter incrementer",
-              description:
-                "A rule that reacts to a command to increment with the current counter state",
-              # accumulator conditions handle a Condition clause with two arguments OR a Condition with at least a state and another fact
-              condition: &Counting.do_increment?/2,
-              reaction: &Counting.incrementer/1
-            )
-          ]
-        )
-      )
-    end
-
-    # def simple_lock() do
-    #   Workflow.new(name: "simple lock")
-    #   |> Workflow.add_accumulator(
-    #     name: "represents the state of a lock",
-    #     init: :locked,
-    #     reactors: [
-    #       Dagger.rule(
-    #         name: "unlocks a locked lock",
-    #         description: "if locked, unlocks",
-    #         condition: &Lock.locked?/2,
-    #         reaction: &Lock.unlock/1
-    #       ),
-    #       Dagger.rule(
-    #         name: "locks an unlocked lock",
-    #         description: "if locked, unlocks",
-    #         condition: &Lock.unlocked?/2,
-    #         reaction: &Lock.unlock/1
-    #       )
-    #     ]
-    #   )
-    # end
   end
 
   def setup_test_pipelines(_context) do
     {:ok,
      [
        basic_text_processing_pipeline: TestWorkflows.basic_text_processing_pipeline()
-       #  counter_accumulator_with_triggers: TestWorkflows.counter_accumulator_with_triggers(),
-       #  simple_lock: TestWorkflows.simple_lock()
      ]}
   end
 
@@ -331,9 +275,6 @@ defmodule WorkflowTest do
 
       assert Enum.count(Workflow.next_runnables(wrk)) == 1
       assert not is_nil(Workflow.matches(wrk))
-
-      # a user ought to be able to run a concurrent set of runnables at this point
-      # but the api for doing so needs to not require a reduce + activate + agenda cycling as that's too complex
 
       next_facts =
         Workflow.next_runnables(wrk)
@@ -569,16 +510,6 @@ defmodule WorkflowTest do
 
   describe "use cases" do
     setup [:setup_test_pipelines]
-
-    # test "counter accumulation with triggers", %{counter_accumulator_with_triggers: wrk} do
-    #   reactions = Workflow.react(wrk, [:start_count, :count, :count, :count])
-
-    #   # assert match?(List.last(reactions), %Fact{type: :state_produced, value: 2})
-    # end
-
-    # test "simple lock", %{simple_lock: wrk} do
-    #   assert false
-    # end
 
     test "text processing pipeline", %{basic_text_processing_pipeline: wrk} do
       wrk =

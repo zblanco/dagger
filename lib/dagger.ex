@@ -47,7 +47,7 @@ defmodule Dagger do
   alias Dagger.Workflow.{
     Step,
     Steps,
-    Accumulator,
+    StateMachine,
     Rule
   }
 
@@ -181,7 +181,10 @@ defmodule Dagger do
     |> add_rules(rules)
   end
 
-  defmacro accumulator(opts \\ []) do
+  @doc """
+  A macro for expressing a state machine which can be composed within Dagger workflows.
+  """
+  defmacro state_machine(opts \\ []) do
     init =
       Keyword.get(opts, :init) ||
         raise ArgumentError, "Defining an accumulator requires an initiator function or value"
@@ -190,25 +193,29 @@ defmodule Dagger do
       Keyword.get(opts, :reducer) ||
         raise ArgumentError, "Defining an accumulator a reducer"
 
+    reactors = Keyword.get(opts, :reactors)
+
+    name = Keyword.get(opts, :name)
+
     quote bind_quoted: [
             init: Macro.escape(init),
-            reducer: Macro.escape(reducer)
+            reducer: Macro.escape(reducer),
+            reactors: Macro.escape(reactors),
+            name: Macro.escape(name)
           ] do
-      Accumulator.new(init, reducer)
+      StateMachine.new(init, reducer, reactors: reactors, name: name)
     end
   end
 
-  defmacro accumulator(init, reducer) do
+  defmacro state_machine(init, reducer, opts) do
     quote bind_quoted: [
             init: Macro.escape(init),
-            reducer: Macro.escape(reducer)
+            reducer: Macro.escape(reducer),
+            opts: Macro.escape(opts)
           ] do
-      Accumulator.new(init, reducer)
+      StateMachine.new(init, reducer, opts)
     end
   end
-
-  # defp init_rule(%Rule{} = init, _acc_name), do: init
-  # defp init_rule(init, acc_name), do: Dagger.rule(init, name: "#{acc_name}-init")
 
   defp add_steps(workflow, nil), do: workflow
 
@@ -238,7 +245,11 @@ defmodule Dagger do
   defp add_dependent_steps({parent_step, dependent_steps}, workflow) do
     Enum.reduce(dependent_steps, workflow, fn
       {[_step | _] = parent_steps, _dependent_steps} = parents_and_children, wrk ->
-        wrk = Enum.reduce(parent_steps, wrk, fn step, wrk -> Workflow.add_step(wrk, step) end)
+        wrk =
+          Enum.reduce(parent_steps, wrk, fn step, wrk ->
+            Workflow.add_step(wrk, parent_step, step)
+          end)
+
         add_dependent_steps(parents_and_children, wrk)
 
       {step, _dependent_steps} = parent_and_children, wrk ->

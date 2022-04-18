@@ -248,10 +248,6 @@ defmodule Dagger.Workflow do
     end)
   end
 
-  # def is_runnable?(%__MODULE__{agenda: agenda}) do
-  #   Agenda.any_runnables_for_next_cycle?(agenda)
-  # end
-
   def is_runnable?(%__MODULE__{memory: memory}) do
     # generation_fact = fact_for_generation(memory, generation)
 
@@ -319,7 +315,7 @@ defmodule Dagger.Workflow do
     end)
   end
 
-  # considering an alternate activation protocol that defers the connection labeling transitions to the implementer - this is just a "make it work" solution
+  # instead activation protocol should defer the connection labeling transitions to the implementer - current is "make it work" solution
   defp connection_for_activatable(step) do
     case Activation.match_or_execute(step) do
       :match -> :matchable
@@ -348,19 +344,6 @@ defmodule Dagger.Workflow do
     for %Graph.Edge{} = edge <- Graph.out_edges(memory, fact),
         edge.label == :satisfied,
         do: edge.v2
-  end
-
-  @spec add_to_agenda(Workflow.t(), maybe_improper_list) :: Workflow.t()
-  def add_to_agenda(%__MODULE__{agenda: agenda} = wrk, runnables) when is_list(runnables) do
-    %__MODULE__{
-      wrk
-      | agenda:
-          Enum.reduce(runnables, agenda, fn runnable, agenda ->
-            agenda
-            |> Agenda.add_runnable(runnable)
-            |> Agenda.next_cycle()
-          end)
-    }
   end
 
   @spec raw_reactions(Dagger.Workflow.t()) :: list(any())
@@ -428,8 +411,6 @@ defmodule Dagger.Workflow do
     |> Graph.in_neighbors(generation)
     |> List.first()
   end
-
-  # def next_match_runnables(%__MODULE__{agenda: agenda}), do: Agenda.next_match_runnables(agenda)
 
   def next_steps(%__MODULE__{flow: flow}, parent_step) do
     next_steps(flow, parent_step)

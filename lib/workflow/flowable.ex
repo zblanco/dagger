@@ -56,9 +56,9 @@ defimpl Dagger.Flowable, for: Any do
   end
 end
 
-defimpl Dagger.Flowable, for: Dagger.Workflow.Accumulator do
-  def to_workflow(%Dagger.Workflow.Accumulator{} = acc) do
-    acc.workflow
+defimpl Dagger.Flowable, for: Dagger.Workflow.StateMachine do
+  def to_workflow(%Dagger.Workflow.StateMachine{} = fsm) do
+    fsm.workflow
   end
 
   # def to_workflow(%Dagger.Workflow.Accumulator{

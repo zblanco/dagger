@@ -2,7 +2,7 @@ defmodule DaggerTest do
   use ExUnit.Case
   alias Dagger.Workflow.Step
   alias Dagger.Workflow.Rule
-  alias Dagger.Workflow.Accumulator
+  alias Dagger.Workflow.StateMachine
   alias Dagger.Workflow
   require Dagger
   import CompileTimeAssertions
@@ -252,10 +252,10 @@ defmodule DaggerTest do
     end
   end
 
-  describe "Dagger.accumulator/1 constructor" do
-    test "constructs a Flowable %Accumulator{} given a name, init, and a reducer expression" do
-      accumulator =
-        Dagger.accumulator(
+  describe "Dagger.state_machine/1" do
+    test "constructs a Flowable %StateMachine{} given a name, init, and a reducer expression" do
+      state_machine =
+        Dagger.state_machine(
           name: "adds integers of some factor to its state up until 30 then stops",
           init: 0,
           reducer: fn
@@ -266,11 +266,33 @@ defmodule DaggerTest do
           end
         )
 
-      assert match?(%Accumulator{}, accumulator)
+      assert match?(%StateMachine{}, state_machine)
 
-      wrk = Dagger.Flowable.to_workflow(accumulator)
+      wrk = Dagger.Flowable.to_workflow(state_machine)
 
       assert match?(%Workflow{}, wrk)
+    end
+
+    test "reactors can be included to respond to state changes" do
+      potato_lock =
+        Dagger.state_machine(
+          name: "potato lock"
+          init: %{code: "potato", state: :locked, contents: "ham"},
+          reducer: fn
+            :lock, state ->
+              %{state | state: :locked}
+
+            {:unlock, input_code}, %{code: code, state: :locked} = state when input_code == code ->
+              %{state | state: :unlocked}
+
+            _input_code, %{state: :unlocked} ->
+              state
+          end,
+          reactors: [
+            fn %{state: :unlocked, contents: contents} -> contents end,
+            fn %{state: :locked} -> {:error, :locked} end
+          ]
+        )
     end
   end
 end

@@ -202,63 +202,63 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.MemoryAssertion do
   def match_or_execute(_memory_assertion), do: :match
 end
 
-defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.StateReactor do
+defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Accumulator do
   alias Dagger.Workflow
 
   alias Dagger.Workflow.{
     Fact,
     Steps,
-    StateReactor
+    Accumulator
   }
 
-  @spec activate(%Dagger.Workflow.StateReactor{}, Dagger.Workflow.t(), Dagger.Workflow.Fact.t()) ::
+  @spec activate(%Dagger.Workflow.Accumulator{}, Dagger.Workflow.t(), Dagger.Workflow.Fact.t()) ::
           Dagger.Workflow.t()
   def activate(
-        %StateReactor{} = sr,
+        %Accumulator{} = acc,
         %Workflow{} = workflow,
         %Fact{} = fact
       ) do
-    last_known_state = last_known_state(workflow, sr)
+    last_known_state = last_known_state(workflow, acc)
 
     unless is_nil(last_known_state) do
-      next_state = apply(sr.reactor, [fact.value, last_known_state.value])
+      next_state = apply(acc.reducer, [fact.value, last_known_state.value])
 
-      next_state_produced_fact = Fact.new(value: next_state, ancestry: {sr.hash, fact.hash})
+      next_state_produced_fact = Fact.new(value: next_state, ancestry: {acc.hash, fact.hash})
 
       workflow
-      |> Workflow.prepare_next_runnables(sr, fact)
+      |> Workflow.prepare_next_runnables(acc, fact)
       |> Workflow.log_fact(next_state_produced_fact)
-      |> Workflow.draw_connection(sr.hash, fact, :produced)
-      |> Workflow.mark_runnable_as_ran(sr, fact)
+      |> Workflow.draw_connection(acc.hash, fact, :produced)
+      |> Workflow.mark_runnable_as_ran(acc, fact)
     else
-      init_fact = init_fact(sr)
+      init_fact = init_fact(acc)
 
-      next_state = apply(sr.reactor, [fact.value, init_fact.value])
+      next_state = apply(acc.reducer, [fact.value, init_fact.value])
 
-      next_state_produced_fact = Fact.new(value: next_state, ancestry: {sr.hash, fact.hash})
+      next_state_produced_fact = Fact.new(value: next_state, ancestry: {acc.hash, fact.hash})
 
       workflow
       |> Workflow.log_fact(init_fact)
-      |> Workflow.draw_connection(sr.hash, init_fact, :produced)
-      |> Workflow.prepare_next_runnables(sr, fact)
+      |> Workflow.draw_connection(acc.hash, init_fact, :produced)
+      |> Workflow.prepare_next_runnables(acc, fact)
       |> Workflow.log_fact(next_state_produced_fact)
-      |> Workflow.draw_connection(sr.hash, next_state_produced_fact, :produced)
-      |> Workflow.mark_runnable_as_ran(sr, fact)
+      |> Workflow.draw_connection(acc.hash, next_state_produced_fact, :produced)
+      |> Workflow.mark_runnable_as_ran(acc, fact)
     end
   end
 
   def match_or_execute(_state_reactor), do: :execute
 
-  defp last_known_state(workflow, state_reactor) do
+  defp last_known_state(workflow, accumulator) do
     workflow.memory
-    |> Graph.out_edges(state_reactor.hash)
+    |> Graph.out_edges(accumulator.hash)
     # we might want generational nodes ? maybe a property on the edge label of a state produced connection?
     |> Enum.filter(&(&1.label == :produced and &1.v1.generation == workflow.generation - 1))
     |> List.first(%{})
     |> Map.get(:v1)
   end
 
-  defp init_fact(%StateReactor{init: init, hash: hash}),
+  defp init_fact(%Accumulator{init: init, hash: hash}),
     do: Fact.new(value: init, ancestry: {hash, Steps.fact_hash(init)})
 end
 
