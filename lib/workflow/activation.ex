@@ -11,8 +11,8 @@ defprotocol Dagger.Workflow.Activation do
   def activate(node, workflow, fact)
   def match_or_execute(node)
 
-  def runnable_connection(node)
-  def resolved_connection(node)
+  # def runnable_connection(node)
+  # def resolved_connection(node)
 end
 
 defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Root do
@@ -35,8 +35,8 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Root do
   end
 
   def match_or_execute(_root), do: :match
-  def runnable_connection(_root), do: :root
-  def resolved_connection(_root), do: :root
+  # def runnable_connection(_root), do: :root
+  # def resolved_connection(_root), do: :root
 end
 
 defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Condition do
@@ -65,8 +65,8 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Condition do
     end
   end
 
-  def runnable_connection(_condition), do: :matchable
-  def resolved_connection(_condition), do: :satisfied
+  # def runnable_connection(_condition), do: :matchable
+  # def resolved_connection(_condition), do: :satisfied
 
   def match_or_execute(_condition), do: :match
 
@@ -142,8 +142,8 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Step do
   end
 
   def match_or_execute(_step), do: :execute
-  def runnable_connection(_step), do: :runnable
-  def resolved_connection(_step), do: :ran
+  # def runnable_connection(_step), do: :runnable
+  # def resolved_connection(_step), do: :ran
   # def causal_connection(_step), do: :produced
 end
 
@@ -182,8 +182,8 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Conjunction do
   end
 
   def match_or_execute(_conjunction), do: :match
-  def runnable_connection(_conjunction), do: :matchable
-  def resolved_connection(_conjunction), do: :satisfied
+  # def runnable_connection(_conjunction), do: :matchable
+  # def resolved_connection(_conjunction), do: :satisfied
 end
 
 defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.MemoryAssertion do
@@ -215,8 +215,8 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.MemoryAssertion do
   end
 
   def match_or_execute(_memory_assertion), do: :match
-  def runnable_connection(_memory_assertion), do: :matchable
-  def resolved_connection(_memory_assertion), do: :satisfied
+  # def runnable_connection(_memory_assertion), do: :matchable
+  # def resolved_connection(_memory_assertion), do: :satisfied
 end
 
 defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.StateCondition do
@@ -251,8 +251,8 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.StateCondition do
   end
 
   def match_or_execute(_state_condition), do: :match
-  def runnable_connection(_state_condition), do: :matchable
-  def resolved_connection(_state_condition), do: :satisfied
+  # def runnable_connection(_state_condition), do: :matchable
+  # def resolved_connection(_state_condition), do: :satisfied
 end
 
 defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Accumulator do
@@ -302,8 +302,8 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Accumulator do
 
   def match_or_execute(_state_reactor), do: :execute
 
-  def runnable_connection(_state_condition), do: :runnable
-  def resolved_connection(_state_condition), do: :state_produced
+  # def runnable_connection(_state_condition), do: :runnable
+  # def resolved_connection(_state_condition), do: :state_produced
 
   defp last_known_state(workflow, accumulator) do
     workflow.memory
@@ -377,8 +377,8 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Join do
   #   |> Graph.in_edges(produced_edge.v1)
   #   |> Enum.any?(&(&1.label == :ran and &1.v2 == parent_hash))
   # end
-  def runnable_connection(_state_condition), do: :runnable
-  def resolved_connection(_state_condition), do: :join_satisfied
+  # def runnable_connection(_state_condition), do: :runnable
+  # def resolved_connection(_state_condition), do: :join_satisfied
 
   def match_or_execute(_join), do: :execute
 end
