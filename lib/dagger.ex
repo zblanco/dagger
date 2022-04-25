@@ -220,6 +220,7 @@ defmodule Dagger do
   defp add_steps(workflow, nil), do: workflow
 
   defp add_steps(workflow, steps) when is_list(steps) do
+    # root level pass
     Enum.reduce(steps, workflow, fn
       %Step{} = step, wrk ->
         Workflow.add_step(wrk, step)
@@ -244,13 +245,20 @@ defmodule Dagger do
 
   defp add_dependent_steps({parent_step, dependent_steps}, workflow) do
     Enum.reduce(dependent_steps, workflow, fn
-      {[_step | _] = parent_steps, _dependent_steps} = parents_and_children, wrk ->
+      {[_step | _] = parent_steps, dependent_steps}, wrk ->
         wrk =
           Enum.reduce(parent_steps, wrk, fn step, wrk ->
             Workflow.add_step(wrk, parent_step, step)
           end)
 
-        add_dependent_steps(parents_and_children, wrk)
+        join =
+          parent_steps
+          |> Enum.map(& &1.hash)
+          |> Workflow.Join.new()
+
+        wrk = Workflow.add_step(wrk, parent_steps, join)
+
+        add_dependent_steps({join, dependent_steps}, wrk)
 
       {step, _dependent_steps} = parent_and_children, wrk ->
         wrk = Workflow.add_step(wrk, parent_step, step)

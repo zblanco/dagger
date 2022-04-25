@@ -276,13 +276,14 @@ defmodule DaggerTest do
     test "reactors can be included to respond to state changes" do
       potato_lock =
         Dagger.state_machine(
-          name: "potato lock"
+          name: "potato lock",
           init: %{code: "potato", state: :locked, contents: "ham"},
           reducer: fn
             :lock, state ->
               %{state | state: :locked}
 
-            {:unlock, input_code}, %{code: code, state: :locked} = state when input_code == code ->
+            {:unlock, input_code}, %{code: code, state: :locked} = state
+            when input_code == code ->
               %{state | state: :unlocked}
 
             _input_code, %{state: :unlocked} ->

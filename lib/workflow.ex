@@ -234,7 +234,6 @@ defmodule Dagger.Workflow do
          _match_runnables,
          _any_match_phase_runnables? = false
        ) do
-    # IO.inspect(conditions(wrk), label: "possible conditions")
     wrk
   end
 
@@ -360,15 +359,23 @@ defmodule Dagger.Workflow do
   @doc """
   Returns raw (output value) side effects of the workflow - i.e. facts resulting from the execution of a Dagger.Step
   """
-  def reactions(%__MODULE__{} = wrk) do
-    wrk.facts
+  def reactions(%__MODULE__{memory: memory}) do
+    for %Graph.Edge{} = edge <- Graph.edges(memory),
+        edge.label == :produced or edge.label == :ran,
+        uniq: true do
+      if(match?(%Fact{}, edge.v1), do: edge.v1, else: edge.v2)
+    end
   end
 
   @spec facts(Dagger.Workflow.t()) :: list(Dagger.Workflow.Fact.t())
   @doc """
   Lists facts produced in the workflow so far.
   """
-  def facts(%__MODULE__{} = wrk), do: wrk.facts
+  def facts(%__MODULE__{memory: memory}) do
+    for v <- Graph.vertices(memory), match?(%Fact{}, v) do
+      v
+    end
+  end
 
   @doc false
   def matches(%__MODULE__{memory: memory}) do
@@ -395,6 +402,37 @@ defmodule Dagger.Workflow do
         edge.label == :runnable do
       {Map.get(flow.vertices, edge.v2), edge.v1}
     end
+  end
+
+  def next_runnables(
+        %__MODULE__{} = wrk,
+        %Fact{ancestry: {parent_step_hash, _parent_fact}} = fact
+      ) do
+    wrk =
+      unless Graph.has_vertex?(wrk.memory, fact) do
+        log_fact(wrk, fact)
+      else
+        wrk
+      end
+
+    parent_step = Map.get(wrk.flow.vertices, parent_step_hash)
+
+    next_step_hashes =
+      wrk
+      |> next_steps(parent_step)
+      |> Enum.map(& &1.hash)
+
+    for %Graph.Edge{} = edge <-
+          Enum.flat_map(next_step_hashes, &Graph.out_edges(wrk.memory, &1)),
+        edge.label == :runnable do
+      {Map.get(wrk.flow.vertices, edge.v2), edge.v1}
+    end
+  end
+
+  def next_runnables(%__MODULE__{flow: flow}, raw_fact) do
+    flow
+    |> Graph.out_neighbors(root())
+    |> Enum.map(&{&1, Fact.new(value: raw_fact)})
   end
 
   defp next_match_runnables(%__MODULE__{flow: flow, memory: memory, generations: generation}) do
@@ -438,15 +476,55 @@ defmodule Dagger.Workflow do
   @doc """
   Merges the second workflow into the first maintaining the name of the first.
   """
-  def merge(%__MODULE__{flow: flow} = workflow, %__MODULE__{flow: flow2}) do
+  def merge(
+        %__MODULE__{flow: flow, memory: memory} = workflow,
+        %__MODULE__{flow: flow2, memory: memory2} = _workflow2
+      ) do
+    # todo: consider reduce from a bfs search instead of using Graph.edges/1 or manually recursing
+    merged_flow =
+      flow2
+      |> Graph.out_neighbors(%Root{})
+      |> Enum.reduce(flow, fn v, into_flow ->
+        do_merge(into_flow, flow2, v, %Root{})
+      end)
+
+    merged_memory =
+      (Graph.edges(memory2) ++ Graph.edges(memory))
+      |> Enum.uniq()
+      |> Enum.reduce(memory, fn
+        # always add the new edge - unless that edge already exists in the acc graph for a runnable transition or the acc graph has a more advanced transition
+
+        %{v1: %Fact{} = _fact_v1, v2: _v2, label: :generation} = memory2_edge, mem ->
+          Graph.add_edge(mem, memory2_edge)
+
+        %{v1: %Fact{} = fact_v1, v2: v2, label: label} = memory2_edge, mem
+        when label in [:matchable, :runnable, :ran] ->
+          out_edge_labels_of_into_mem_for_edge =
+            mem
+            |> Graph.out_edges(fact_v1)
+            |> Enum.filter(&(&1.v2 == v2))
+            |> MapSet.new(& &1.label)
+
+          cond do
+            label in [:matchable, :runnable] and
+                MapSet.member?(out_edge_labels_of_into_mem_for_edge, :ran) ->
+              mem
+
+            label == :ran and MapSet.member?(out_edge_labels_of_into_mem_for_edge, :runnable) ->
+              Graph.update_labelled_edge(mem, fact_v1, v2, :runnable, label: :ran)
+
+            true ->
+              Graph.add_edge(mem, memory2_edge)
+          end
+
+        %{v1: _v1, v2: _v2} = memory2_edge, mem ->
+          Graph.add_edge(mem, memory2_edge)
+      end)
+
     %__MODULE__{
       workflow
-      | flow:
-          flow2
-          |> Graph.out_neighbors(%Root{})
-          |> Enum.reduce(flow, fn v, into_flow ->
-            do_merge(into_flow, flow2, v, %Root{})
-          end)
+      | flow: merged_flow,
+        memory: merged_memory
     }
   end
 

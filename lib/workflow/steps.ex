@@ -20,14 +20,24 @@ defmodule Dagger.Workflow.Steps do
   def join_hash(left, right),
     do: fact_hash(:erlang.term_to_binary({left, right}))
 
-  def run({m, f}, [] = fact_value), do: apply(m, f, fact_value)
-  def run({m, f}, fact_value), do: apply(m, f, [fact_value])
+  def run({m, f}, fact_value) when is_list(fact_value), do: run({m, f}, fact_value, 1)
+
+  # def run({m, f}, [] = fact_value), do: apply(m, f, fact_value)
+  # def run({m, f}, fact_value), do: apply(m, f, [fact_value])
 
   def run(work, fact_value) when is_function(work), do: run(work, fact_value, arity_of(work))
 
+  def run({m, f}, [] = fact_value, a) do
+    work = Function.capture(m, f, a)
+    run(work, fact_value, arity_of(work))
+  end
+
   def run(work, _fact_value, 0) when is_function(work), do: apply(work, [])
 
-  def run(work, fact_value, arity) when is_function(work) and is_list(fact_value) and arity > 1,
+  def run(work, fact_value, 1) when is_function(work) and is_list(fact_value),
+    do: apply(work, [fact_value])
+
+  def run(work, fact_value, _arity) when is_function(work) and is_list(fact_value),
     do: apply(work, fact_value)
 
   def run(work, fact_value, _arity) when is_function(work), do: apply(work, [fact_value])

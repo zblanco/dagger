@@ -2,25 +2,30 @@ defprotocol Dagger.Workflow.Activation do
   @moduledoc """
   Protocol enforcing how an operation/step/node within a workflow can always be activated in context of a workflow.
 
-  Activation protocol permits only serial state transformations of a workflow, i.e. the return of activating a node is always a new Workflow.
+  The return of an implementation's `activate/3` should always return a new workflow.
 
-  Activation is used for varying types of nodes within a workflow to know how
-    to "activate" by preparing an agenda and maintaining state for partially satisfied conditions.
-
-  The activation protocol's goal is to extract the runnables of the next cycle and prepare that in the agenda in the minimum amount of work.
+  `activate/3`
 
   The activation protocol invokes the runnable protocol to evaluate valid steps in that cycle starting with conditionals.
   """
   def activate(node, workflow, fact)
   def match_or_execute(node)
 
-  # def runnable_connection(node)
-  # def resolved_connection(node)
+  def runnable_connection(node)
+  def resolved_connection(node)
 end
 
 defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Root do
   alias Dagger.Workflow.Root
+  alias Dagger.Workflow.Fact
   alias Dagger.Workflow
+
+  def activate(%Root{}, workflow, %Fact{ancestry: {parent_hash, _parent_fact_hash}} = fact) do
+    workflow
+    |> Workflow.log_fact(fact)
+    # |> Workflow.prepare_next_generation(fact)
+    |> Workflow.prepare_next_runnables(Map.get(workflow.flow.vertices, parent_hash), fact)
+  end
 
   def activate(%Root{} = root, workflow, fact) do
     workflow
@@ -30,6 +35,8 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Root do
   end
 
   def match_or_execute(_root), do: :match
+  def runnable_connection(_root), do: :root
+  def resolved_connection(_root), do: :root
 end
 
 defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Condition do
@@ -57,6 +64,9 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Condition do
       Workflow.mark_runnable_as_ran(workflow, condition, fact)
     end
   end
+
+  def runnable_connection(_condition), do: :matchable
+  def resolved_connection(_condition), do: :satisfied
 
   def match_or_execute(_condition), do: :match
 
@@ -121,8 +131,8 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Step do
       ) do
     result = Steps.run(step.work, fact.value, Steps.arity_of(step.work))
 
-    result_fact =
-      Fact.new(value: result, ancestry: {step.hash, fact.hash}, runnable: {step, fact})
+    result_fact = Fact.new(value: result, ancestry: {step.hash, fact.hash})
+    # Fact.new(value: result, ancestry: {step.hash, fact.hash}, runnable: {step, fact})
 
     workflow
     |> Workflow.draw_connection(step.hash, result_fact, :produced)
@@ -132,6 +142,9 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Step do
   end
 
   def match_or_execute(_step), do: :execute
+  def runnable_connection(_step), do: :runnable
+  def resolved_connection(_step), do: :ran
+  # def causal_connection(_step), do: :produced
 end
 
 defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Conjunction do
@@ -169,6 +182,8 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Conjunction do
   end
 
   def match_or_execute(_conjunction), do: :match
+  def runnable_connection(_conjunction), do: :matchable
+  def resolved_connection(_conjunction), do: :satisfied
 end
 
 defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.MemoryAssertion do
@@ -200,6 +215,44 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.MemoryAssertion do
   end
 
   def match_or_execute(_memory_assertion), do: :match
+  def runnable_connection(_memory_assertion), do: :matchable
+  def resolved_connection(_memory_assertion), do: :satisfied
+end
+
+defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.StateCondition do
+  alias Dagger.Workflow
+
+  alias Dagger.Workflow.{
+    Fact,
+    StateCondition
+  }
+
+  @spec activate(
+          %Dagger.Workflow.StateCondition{},
+          Dagger.Workflow.t(),
+          Dagger.Workflow.Fact.t()
+        ) :: Dagger.Workflow.t()
+  def activate(
+        %StateCondition{} = sc,
+        %Workflow{} = workflow,
+        %Fact{} = fact
+      ) do
+    # get last known state or the init of the accumulator
+    last_known_state = last_known_state(sc.state_hash, workflow)
+    # check
+  end
+
+  defp last_known_state(state_hash, workflow) do
+    workflow.memory
+    |> Graph.out_edges(state_hash)
+    |> Enum.filter(&(&1.label == :state_produced and &1.v1.generation == workflow.generation - 1))
+    |> List.first(%{})
+    |> Map.get(:v1)
+  end
+
+  def match_or_execute(_state_condition), do: :match
+  def runnable_connection(_state_condition), do: :matchable
+  def resolved_connection(_state_condition), do: :satisfied
 end
 
 defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Accumulator do
@@ -228,7 +281,7 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Accumulator do
       workflow
       |> Workflow.prepare_next_runnables(acc, fact)
       |> Workflow.log_fact(next_state_produced_fact)
-      |> Workflow.draw_connection(acc.hash, fact, :produced)
+      |> Workflow.draw_connection(acc.hash, fact, :state_produced)
       |> Workflow.mark_runnable_as_ran(acc, fact)
     else
       init_fact = init_fact(acc)
@@ -239,21 +292,24 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Accumulator do
 
       workflow
       |> Workflow.log_fact(init_fact)
-      |> Workflow.draw_connection(acc.hash, init_fact, :produced)
+      |> Workflow.draw_connection(acc.hash, init_fact, :state_produced)
       |> Workflow.prepare_next_runnables(acc, fact)
       |> Workflow.log_fact(next_state_produced_fact)
-      |> Workflow.draw_connection(acc.hash, next_state_produced_fact, :produced)
+      |> Workflow.draw_connection(acc.hash, next_state_produced_fact, :state_produced)
       |> Workflow.mark_runnable_as_ran(acc, fact)
     end
   end
 
   def match_or_execute(_state_reactor), do: :execute
 
+  def runnable_connection(_state_condition), do: :runnable
+  def resolved_connection(_state_condition), do: :state_produced
+
   defp last_known_state(workflow, accumulator) do
     workflow.memory
     |> Graph.out_edges(accumulator.hash)
     # we might want generational nodes ? maybe a property on the edge label of a state produced connection?
-    |> Enum.filter(&(&1.label == :produced and &1.v1.generation == workflow.generation - 1))
+    |> Enum.filter(&(&1.label == :state_produced and &1.v1.generation == workflow.generation - 1))
     |> List.first(%{})
     |> Map.get(:v1)
   end
@@ -321,6 +377,8 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Join do
   #   |> Graph.in_edges(produced_edge.v1)
   #   |> Enum.any?(&(&1.label == :ran and &1.v2 == parent_hash))
   # end
+  def runnable_connection(_state_condition), do: :runnable
+  def resolved_connection(_state_condition), do: :join_satisfied
 
   def match_or_execute(_join), do: :execute
 end
