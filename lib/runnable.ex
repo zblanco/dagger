@@ -45,6 +45,6 @@ defimpl Dagger.Runnable, for: Dagger.Workflow.Step do
   def run(%Step{work: work} = step, %Fact{value: value} = fact) do
     result = Steps.run(work, value)
 
-    Fact.new(value: result, ancestry: {step.hash, fact.hash}, runnable: {step, fact})
+    Fact.new(value: result, ancestry: {step.hash, fact.hash})
   end
 end

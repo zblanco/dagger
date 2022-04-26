@@ -101,12 +101,12 @@ defmodule Dagger.Workflow.Rule do
     rule
     |> Dagger.Flowable.to_workflow()
     |> Workflow.plan_eagerly(input)
-    |> Workflow.next_runnables()
-    |> Enum.map(fn {step, fact} -> Dagger.Runnable.run(step, fact) end)
+    |> Workflow.react()
+    |> Workflow.raw_productions()
     |> List.first()
     |> case do
       nil -> {:error, :no_conditions_satisfied}
-      %{value: value} -> value
+      result_otherwise -> result_otherwise
     end
   end
 

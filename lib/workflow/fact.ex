@@ -11,7 +11,6 @@ defmodule Dagger.Workflow.Fact do
   # import Norm
   defstruct value: nil,
             ancestry: nil,
-            runnable: nil,
             hash: nil
 
   def new(params) do
@@ -32,8 +31,7 @@ defmodule Dagger.Workflow.Fact do
   """
   @type t() :: %__MODULE__{
           value: value(),
-          ancestry: {hash(), hash()},
-          runnable: {any(), __MODULE__.t()} | nil
+          ancestry: {hash(), hash()}
         }
 
   @typedoc """

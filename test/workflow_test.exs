@@ -308,11 +308,10 @@ defmodule WorkflowTest do
       assert not is_nil(Workflow.matches(wrk))
 
       next_facts =
-        Workflow.next_runnables(wrk)
-        |> Enum.map(fn {work, input} -> Dagger.Runnable.run(work, input) end)
-        |> IO.inspect(label: "next facts")
+        Workflow.react(wrk)
+        |> Workflow.reactions()
 
-      assert match?(%{value: "potato!"}, List.first(next_facts))
+      assert Enum.any?(next_facts, &match?(%{value: "potato!"}, &1))
 
       wrk = Workflow.plan_eagerly(workflow, 42)
       assert Enum.count(Workflow.next_runnables(wrk)) == 1

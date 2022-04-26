@@ -78,14 +78,12 @@ defmodule Dagger.Workflow do
   end
 
   def new(params) when is_list(params) do
-    flow =
-      Graph.new(vertex_identifier: &Steps.vertex_id_of/1)
-      |> Graph.add_vertex(root(), :root)
+    flow = new_flow()
 
     struct!(__MODULE__, params)
     |> Map.put(:flow, flow)
     |> Map.put(:activations, %{})
-    |> Map.put(:memory, Graph.new(vertex_identifier: &Steps.vertex_id_of/1))
+    |> Map.put(:memory, new_memory())
     |> Map.put(:agenda, Agenda.new())
   end
 
@@ -93,7 +91,19 @@ defmodule Dagger.Workflow do
     new(Map.to_list(params))
   end
 
+  defp new_memory, do: Graph.new(vertex_identifier: &Steps.memory_vertex_id/1)
+
+  defp new_flow do
+    Graph.new(vertex_identifier: &Steps.vertex_id_of/1)
+    |> Graph.add_vertex(root(), :root)
+  end
+
+  @doc false
   def root(), do: %Root{}
+
+  def purge_memory(%__MODULE__{} = wrk) do
+    %__MODULE__{wrk | memory: new_memory()}
+  end
 
   # plan: cycle through a single phase of match/lhs/conditionals
   # plan_eagerly: cycle through matches until only step/rhs runnables are ready
@@ -361,9 +371,24 @@ defmodule Dagger.Workflow do
   """
   def reactions(%__MODULE__{memory: memory}) do
     for %Graph.Edge{} = edge <- Graph.edges(memory),
-        edge.label == :produced or edge.label == :ran,
+        edge.label in [:produced, :ran] and
+          (match?(%Fact{}, edge.v1) or match?(%Fact{}, edge.v2)),
         uniq: true do
       if(match?(%Fact{}, edge.v1), do: edge.v1, else: edge.v2)
+    end
+  end
+
+  def productions(%__MODULE__{memory: memory}) do
+    for %Graph.Edge{} = edge <- Graph.edges(memory),
+        edge.label == :produced do
+      edge.v2
+    end
+  end
+
+  def raw_productions(%__MODULE__{memory: memory}) do
+    for %Graph.Edge{} = edge <- Graph.edges(memory),
+        edge.label == :produced do
+      edge.v2.value
     end
   end
 

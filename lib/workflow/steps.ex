@@ -6,6 +6,10 @@ defmodule Dagger.Workflow.Steps do
   def vertex_id_of(%{hash: hash}), do: hash
   def vertex_id_of(anything_otherwise), do: fact_hash(anything_otherwise)
 
+  def memory_vertex_id(%{hash: hash}), do: hash
+  def memory_vertex_id(hash) when is_integer(hash), do: hash
+  def memory_vertex_id(anything_otherwise), do: fact_hash(anything_otherwise)
+
   def work_hash({m, f}),
     do: work_hash({m, f, 1})
 

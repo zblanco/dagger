@@ -132,11 +132,10 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Step do
     result = Steps.run(step.work, fact.value, Steps.arity_of(step.work))
 
     result_fact = Fact.new(value: result, ancestry: {step.hash, fact.hash})
-    # Fact.new(value: result, ancestry: {step.hash, fact.hash}, runnable: {step, fact})
 
     workflow
-    |> Workflow.draw_connection(step.hash, result_fact, :produced)
     |> Workflow.log_fact(result_fact)
+    |> Workflow.draw_connection(step.hash, result_fact, :produced)
     |> Workflow.prepare_next_runnables(step, result_fact)
     |> Workflow.mark_runnable_as_ran(step, fact)
   end
