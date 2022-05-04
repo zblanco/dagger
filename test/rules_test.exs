@@ -85,19 +85,17 @@ defmodule RulesTest do
              )
     end
 
-    # test "a rule can be created from a single function or binary representation of function" do
-    #   rule = Dagger.rule(fn :potato -> :potato end, name: "potato rule")
+    test "a rule can accept unguarded boolean functions for conditions" do
+      unguarded_rule =
+        Dagger.rule(
+          name: "unguarded condition",
+          condition: fn any -> if(any == :potato or any == "potato", do: true, else: false) end,
+          reaction: "potato!"
+        )
 
-    #   assert match?(%Rule{}, rule)
-
-    #   assert match?(
-    #            %Rule{},
-    #            Dagger.rule("fn :potato -> :potato end", name: "potato rule from string function")
-    #          )
-
-    #   assert :potato == Rule.run(rule, :potato)
-    #   assert is_nil(rule.description)
-    # end
+      assert Rule.check(unguarded_rule, :potato) == true
+      assert Rule.check(unguarded_rule, :ham) == false
+    end
 
     test "we can create a rule that always fires" do
       always_fires_rule_arity_1 =

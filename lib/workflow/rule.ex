@@ -175,6 +175,27 @@ defmodule Dagger.Workflow.Rule do
   end
 
   defp workflow_of_expression(
+         {{:fn, _, _} = lhs, rhs} = expression,
+         arity,
+         _context_env
+       ) do
+    condition =
+      Condition.new(
+        lhs
+        |> Code.eval_quoted()
+        |> elem(0),
+        arity
+      )
+
+    reaction = reaction_step_of_rhs(rhs, arity)
+
+    expression
+    |> Steps.name_of_expression()
+    |> Workflow.new()
+    |> workflow_from_rule(condition, reaction)
+  end
+
+  defp workflow_of_expression(
          {:&, _capture_meta,
           [
             {:/, _arity_meta,
