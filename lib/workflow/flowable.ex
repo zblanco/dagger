@@ -29,7 +29,9 @@ end
 defimpl Dagger.Flowable, for: Dagger.Workflow.Step do
   alias Dagger.Workflow
   require Dagger
-  def to_workflow(step), do: Dagger.workflow() |> Workflow.add_step(step)
+
+  def to_workflow(step),
+    do: step.hash |> to_string() |> Workflow.new() |> Workflow.add_step(step)
 end
 
 defimpl Dagger.Flowable, for: Tuple do
