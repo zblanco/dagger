@@ -30,7 +30,6 @@ defmodule Dagger.Workflow do
     Steps,
     Fact,
     Activation,
-    Agenda,
     Condition,
     Root
   }
@@ -39,13 +38,7 @@ defmodule Dagger.Workflow do
           name: String.t(),
           flow: Graph.t(),
           hash: binary(),
-          activations: any(),
-          facts: list(),
-          agenda: Agenda.t(),
-          steps_executed: integer(),
-          phases: integer(),
-          generations: integer(),
-          epochs: integer()
+          generations: integer()
         }
 
   @type runnable() :: {fun(), term()}
@@ -53,17 +46,10 @@ defmodule Dagger.Workflow do
   @enforce_keys [:name]
 
   defstruct name: nil,
-            steps_executed: 0,
-            phases: 0,
             generations: 0,
-            epochs: 0,
             hash: nil,
             flow: nil,
-            activations: nil,
-            memory: nil,
-            runnables: %{},
-            facts: [],
-            agenda: nil
+            memory: nil
 
   @typedoc """
   A discrimination network of conditions, and steps, built from composites such as rules and accumulations.
@@ -84,7 +70,7 @@ defmodule Dagger.Workflow do
     |> Map.put(:flow, flow)
     |> Map.put(:activations, %{})
     |> Map.put(:memory, new_memory())
-    |> Map.put(:agenda, Agenda.new())
+    |> Map.put_new(:name, UUID.uuid4())
   end
 
   def new(params) when is_map(params) do
@@ -289,19 +275,12 @@ defmodule Dagger.Workflow do
     end)
   end
 
-  def prune_activated_runnable(%__MODULE__{agenda: agenda} = wrk, node, fact) do
-    %__MODULE__{
-      wrk
-      | agenda: Agenda.prune_runnable(agenda, node, fact)
-    }
-  end
-
   def draw_connection(%__MODULE__{memory: memory} = wrk, node_1, node_2, connection) do
     %__MODULE__{wrk | memory: Graph.add_edge(memory, node_1, node_2, label: connection)}
   end
 
-  def log_fact(%__MODULE__{facts: facts, memory: memory} = wrk, %Fact{} = fact) do
-    %__MODULE__{wrk | facts: [fact | facts], memory: Graph.add_vertex(memory, fact)}
+  def log_fact(%__MODULE__{memory: memory} = wrk, %Fact{} = fact) do
+    %__MODULE__{wrk | memory: Graph.add_vertex(memory, fact)}
   end
 
   @spec prepare_next_generation(Workflow.t(), Fact.t()) :: Workflow.t()
@@ -551,6 +530,10 @@ defmodule Dagger.Workflow do
       | flow: merged_flow,
         memory: merged_memory
     }
+  end
+
+  def merge(%__MODULE__{} = workflow, flowable) do
+    merge(workflow, Dagger.Flowable.to_workflow(flowable))
   end
 
   defp do_merge(into_flow, from_flow, steps, parent) when is_list(steps) do

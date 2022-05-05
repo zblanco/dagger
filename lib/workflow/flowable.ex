@@ -26,6 +26,12 @@ defimpl Dagger.Flowable, for: Dagger.Workflow.Rule do
   def to_workflow(rule), do: rule.workflow
 end
 
+defimpl Dagger.Flowable, for: Dagger.Workflow.Step do
+  alias Dagger.Workflow
+  require Dagger
+  def to_workflow(step), do: Dagger.workflow() |> Workflow.add_step(step)
+end
+
 defimpl Dagger.Flowable, for: Tuple do
   alias Dagger.Workflow.Rule
 

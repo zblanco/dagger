@@ -47,11 +47,7 @@ defmodule Dagger.Workflow.Condition do
   @type runnable() :: function() | mfa() | %Step{} | any()
 
   def new(work) when is_function(work) do
-    %__MODULE__{
-      work: work,
-      hash: Steps.work_hash(work),
-      arity: Function.info(work, :arity) |> elem(1)
-    }
+    new(work, Function.info(work, :arity) |> elem(1))
   end
 
   def new(work, arity) when is_function(work) do

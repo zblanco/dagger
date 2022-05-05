@@ -46,16 +46,17 @@ defmodule Dagger do
 
   alias Dagger.Workflow.{
     Step,
+    Condition,
     Steps,
     StateMachine,
     Rule
   }
 
-  defp maybe_expand_captured_function(condition, context) when is_list(condition) do
-    Enum.map(condition, &maybe_expand_captured_function(&1, context))
+  defp maybe_expand(condition, context) when is_list(condition) do
+    Enum.map(condition, &maybe_expand(&1, context))
   end
 
-  defp maybe_expand_captured_function({:&, _, [{:/, _, _}]} = captured_function_ast, context) do
+  defp maybe_expand({:&, _, [{:/, _, _}]} = captured_function_ast, context) do
     Macro.prewalk(captured_function_ast, fn
       {:__aliases__, _meta, _aliases} = alias_ast ->
         Macro.expand(alias_ast, context)
@@ -65,7 +66,12 @@ defmodule Dagger do
     end)
   end
 
-  defp maybe_expand_captured_function(condition, _context), do: condition
+  # defp maybe_expand({name, meta, context} = ast, _context)
+  # when is_atom(name) and is_list(meta) and is_atom(context) do
+
+  # end
+
+  defp maybe_expand(condition, _context), do: condition
 
   @doc """
   Defines a rule with specific key value params.
@@ -73,25 +79,27 @@ defmodule Dagger do
   defmacro rule(opts) when is_list(opts) do
     rule_name = Keyword.get(opts, :name)
 
-    # || (&Steps.always_true/1)
-    condition = Keyword.get(opts, :condition) |> maybe_expand_captured_function(__CALLER__)
+    condition =
+      Keyword.get(opts, :condition)
+      |> maybe_expand(__CALLER__)
 
     reaction =
       Keyword.get(opts, :reaction) || raise ArgumentError, "Defining a rule requires a reaction"
 
     description = Keyword.get(opts, :description)
 
-    expression = {condition, reaction}
-
     arity = Steps.arity_of(reaction)
 
     quote bind_quoted: [
-            expression: Macro.escape(expression),
+            condition: Macro.escape(condition),
+            reaction: Macro.escape(reaction),
             description: description,
             arity: arity,
             rule_name: rule_name,
             context: Macro.escape(__CALLER__)
           ] do
+      expression = {condition, reaction}
+
       Rule.new(
         expression,
         arity: arity,
@@ -300,5 +308,13 @@ defmodule Dagger do
 
   def step({m, f, a} = work, opts) when is_atom(m) and is_atom(f) and is_integer(a) do
     Step.new(Keyword.merge([work: work], opts))
+  end
+
+  @doc """
+  Creates a step: a basic lambda expression that can be added to a workflow.
+  """
+
+  def condition(work) when is_function(work) do
+    Condition.new(work)
   end
 end

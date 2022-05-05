@@ -97,6 +97,20 @@ defmodule RulesTest do
       assert Rule.check(unguarded_rule, :ham) == false
     end
 
+    test "The rule macro constructor respects caller context binds" do
+      potatoes = [:potato, "potato"]
+
+      rule_with_import =
+        Dagger.rule(
+          name: "unguarded condition",
+          condition: fn any -> if(any in potatoes, do: true, else: false) end,
+          reaction: "potato!"
+        )
+
+      assert Rule.check(rule_with_import, :potato) == true
+      assert Rule.check(rule_with_import, :ham) == false
+    end
+
     test "we can create a rule that always fires" do
       always_fires_rule_arity_1 =
         Dagger.rule(fn _anything -> :potato end, name: "1_arity_rule")
