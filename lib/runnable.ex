@@ -1,16 +1,50 @@
 defprotocol Dagger.Runnable do
-  @doc """
-  Protocol that enforces the runnability of a data structure.
+  @moduledoc """
+  The Runnable protocol provides a standard interface for executing a computation from
+    which a new Fact may be derived. The purpose of the runnable protocol is extensibility
+    in kinds of data which Dagger can execute.
 
-  This dispatches the `to_runnable/1` transformation function required by the runnable protocol.
-
-  `to_runnable/1` implementations are required to return `{:ok, %Step{}} | {:error, any}`.
-
-  It isn't necessary to use runnable to use Dagger.
-  You can just use functions like `Step.new` and `Step.add_dependent_job` in your business logic.
-  However the `Runnable` protocol allows further decoupling and removal of implementation details to your code.
-
-  It is recommended to use the Runnable protocol as a way of first validating your inputs before executing `work` in a step.
+  A runnable in Dagger is typically a {work, input} pair whether it's a
+  `{%Step{}, %Fact{}}` or a `{function, arg}`. A runnable might also be a `{%Workflow{}, %Fact{}}`.
   """
-  def to_runnable(maybe_runnable_data)
+  def run(work, input)
+end
+
+defimpl Dagger.Runnable, for: Dagger.Workflow.Condition do
+  alias Dagger.Workflow.{
+    Fact,
+    Steps,
+    Condition
+  }
+
+  def run(%Condition{} = condition, %Fact{} = fact) do
+    with true <- Steps.run(condition.work, fact.value) do
+      Fact.new(
+        value: :satisfied,
+        ancestry: {condition.hash, fact.hash},
+        runnable: {condition, fact}
+      )
+    else
+      _otherwise ->
+        Fact.new(
+          value: :not_satisfied,
+          ancestry: {condition.hash, fact.hash},
+          runnable: {condition, fact}
+        )
+    end
+  end
+end
+
+defimpl Dagger.Runnable, for: Dagger.Workflow.Step do
+  alias Dagger.Workflow.{
+    Fact,
+    Step,
+    Steps
+  }
+
+  def run(%Step{work: work} = step, %Fact{value: value} = fact) do
+    result = Steps.run(work, value)
+
+    Fact.new(value: result, ancestry: {step.hash, fact.hash})
+  end
 end

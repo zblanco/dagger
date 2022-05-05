@@ -22,6 +22,7 @@ defmodule Dagger.MixProject do
   defp deps do
     [
       {:uuid, "~> 1.1"},
+      {:libgraph, github: "bitwalker/libgraph", branch: "main"}
     ]
   end
 end
