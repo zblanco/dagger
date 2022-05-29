@@ -36,6 +36,10 @@ defmodule Dagger.Workflow.StateMachine do
   # alias Dagger.Workflow.Rule
   alias Dagger.Workflow
   alias Dagger.Workflow.Steps
+  alias Dagger.Workflow.Step
+  alias Dagger.Workflow.Condition
+  alias Dagger.Workflow.MemoryAssertion
+  alias Dagger.Workflow.StateCondition
   # alias Dagger.Workflow.Fact
   alias Dagger.Workflow.Accumulator
 
@@ -69,35 +73,80 @@ defmodule Dagger.Workflow.StateMachine do
   end
 
   defp workflow_of_state_machine_ast(init, reducer, reactors) do
-    wrk = Workflow.new(Steps.name_of_expression(reducer))
-
     accumulator = accumulator_of(init, reducer)
 
-    wrk
-    |> Workflow.add_step()
+    reducer
+    |> Steps.name_of_expression()
+    |> Workflow.new()
+    |> merge_into_workflow(reducer, accumulator)
+    |> add_reactors(reactors, accumulator)
   end
 
-  defp reducer_workflows({:fn, _, clauses} = _reducer, accumulator) do
-    Enum.map(
+  defp merge_into_workflow(workflow, {:fn, _, clauses} = _reducer, accumulator) do
+    Enum.reduce(
       clauses,
+      workflow,
       fn
-        {:->, _meta, [[input_command_pattern, state_pattern | _rest] = _lhs, _rhs]} ->
+        {:->, _meta, [lhs, _rhs]} = _clause, wrk ->
           # we need to build a node here that grabs last known state of the accumulator to match against in conjunction with the input command
-          cmd_match_ast =
-            {:fn, [],
-             [
-               {:->, [], [[input_command_pattern], true]},
-               {:->, [], [[{:_otherwise, [if_undefined: :apply], Elixir}], false]}
-             ]}
+          # state condition: "is the input and state what I want for this clauses' rhs?"
+          {state_cond_fun, _} =
+            Code.eval_quoted(
+              {:fn, [],
+               [
+                 {:->, [], [lhs, true]}
+               ]}
+            )
 
-          state_pattern_ast =
-            {:fn, [],
-             [
-               {:->, [], [[state_pattern], true]},
-               {:->, [], [[{:_otherwise, [if_undefined: :apply], Elixir}], false]}
-             ]}
+          state_cond = StateCondition.new(state_cond_fun, accumulator.hash)
+
+          arity_check = Steps.is_of_arity?(2)
+          arity_condition = Condition.new(arity_check)
+
+          wrk
+          |> Workflow.add_step(arity_condition)
+          |> Workflow.add_step(arity_condition, state_cond)
+          |> Workflow.add_step(state_cond, accumulator)
       end
     )
+  end
+
+  defp add_reactors(workflow, nil, _accumulator), do: workflow
+
+  defp add_reactors(workflow, reactors, accumulator) do
+    Enum.reduce(reactors, workflow, fn
+      {:fn, _meta, [{:->, _, [lhs, _rhs]}]} = reactor, wrk ->
+        memory_assertion_fn = fn memory ->
+          last_known_state =
+            memory
+            |> Graph.out_edges(accumulator.hash)
+            |> Enum.filter(
+              &(&1.label == :state_produced and &1.v1.generation == workflow.generation - 1)
+            )
+            |> List.first(%{})
+            |> Map.get(:v1)
+
+          {check_fn, _} =
+            Code.eval_quoted(
+              {:fn, [],
+               [
+                 {:->, [], [lhs, true]},
+                 {:->, [], [[{:_otherwise, [], Elixir}], false]}
+               ]}
+            )
+
+          check_fn.(last_known_state)
+        end
+
+        memory_assertion = MemoryAssertion.new(memory_assertion_fn)
+
+        {reactor_fn, _} = Code.eval_quoted(reactor)
+        reaction = Step.new(work: reactor_fn)
+
+        wrk
+        |> Workflow.add_step(memory_assertion)
+        |> Workflow.add_step(memory_assertion, reaction)
+    end)
   end
 
   defp accumulator_of(init, reducer) do
@@ -112,38 +161,4 @@ defmodule Dagger.Workflow.StateMachine do
 
     Accumulator.new(reducer, init_fun)
   end
-
-  # defp workflow_of_reducer(
-  #        init,
-  #        {:fn, [],
-  #         [
-  #           {:->, [],
-  #            [
-  #              [{_input_arg_bind, _, _} = input_arg, {_acc_bind, _, _} = acc_arg], rhs
-  #            ]}
-  #         ]}
-  #      ) do
-  #   StateReactor.new()
-  # end
-
-  # def new(init, reducers) when is_list(reducers) do
-  #   new(init_of_accumulator(ast_init), Enum.map(reducers, &reducer_to_state_reactor/1))
-  # end
-
-  # def new(%Rule{} = init, [%Rule{} | _] = reducers) do
-  #   # todo: ensure rule reactions always return a `state_produced` event/fact representing the accumulator definition.
-  #   %__MODULE__{init: init, reducers: reducers}
-  # end
-
-  # defp reducers_to_state_reactor(reducer) do
-
-  # end
-
-  # def add_reducer(
-  #       %__MODULE__{reducers: [] = reducers} = accumulator,
-  #       %Rule{} = state_reactor
-  #     ) do
-  #   # todo: validate state_reactors meet contract of an AND
-  #   %__MODULE__{accumulator | reducers: [reducers | [state_reactor]]}
-  # end
 end

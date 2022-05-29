@@ -7,6 +7,6 @@ defmodule Dagger.Workflow.StateCondition do
   defstruct hash: nil, state_hash: nil, work: nil
 
   def new(work, state_hash) do
-    %__MODULE__{state_hash: state_hash, work: work, hash: Steps.work_hash({work, state_hash})}
+    %__MODULE__{state_hash: state_hash, work: work, hash: Steps.fact_hash({work, state_hash})}
   end
 end

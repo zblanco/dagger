@@ -10,7 +10,18 @@ defmodule Dagger.Workflow.Accumulator do
   alias Dagger.Workflow.Steps
   defstruct reducer: nil, init: nil, hash: nil
 
-  def new(reducer, init \\ nil) do
+  def new(reducer, init \\ nil)
+
+  def new(reducer, init) when is_function(reducer) do
     %__MODULE__{reducer: reducer, init: init, hash: Steps.work_hash(reducer)}
+  end
+
+  def new({:fn, _, _} = reducer_ast, init) do
+    IO.inspect(Macro.to_string(reducer_ast), label: "reducer fn")
+
+    reducer_ast
+    |> Code.eval_quoted([], __ENV__)
+    |> elem(0)
+    |> new(init)
   end
 end
