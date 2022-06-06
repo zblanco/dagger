@@ -359,14 +359,14 @@ defmodule Dagger.Workflow do
 
   def productions(%__MODULE__{memory: memory}) do
     for %Graph.Edge{} = edge <- Graph.edges(memory),
-        edge.label == :produced do
+        edge.label == :produced or edge.label == :state_produced do
       edge.v2
     end
   end
 
   def raw_productions(%__MODULE__{memory: memory}) do
     for %Graph.Edge{} = edge <- Graph.edges(memory),
-        edge.label == :produced do
+        edge.label == :produced or edge.label == :state_produced do
       edge.v2.value
     end
   end

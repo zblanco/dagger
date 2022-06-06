@@ -204,7 +204,10 @@ defmodule DaggerTest do
             when input_code == code ->
               %{state | state: :unlocked}
 
-            _input_code, %{state: :unlocked} ->
+            {:unlock, _input_code}, %{state: :locked} = state ->
+              state
+
+            _input_code, %{state: :unlocked} = state ->
               state
           end,
           reactors: [
@@ -212,6 +215,25 @@ defmodule DaggerTest do
             fn %{state: :locked} -> {:error, :locked} end
           ]
         )
+
+      productions_from_1_cycles =
+        potato_lock.workflow
+        |> Workflow.plan_eagerly({:unlock, "potato"})
+        |> Workflow.react()
+        |> Workflow.productions()
+
+      assert Enum.count(productions_from_1_cycles) == 2
+
+      workflow_after_2_cycles =
+        potato_lock.workflow
+        |> Workflow.plan_eagerly({:unlock, "potato"})
+        |> Workflow.react()
+        |> Workflow.plan()
+        |> Workflow.react()
+
+      assert Enum.count(Workflow.productions(workflow_after_2_cycles)) == 3
+
+      assert "ham" in Workflow.raw_reactions(workflow_after_2_cycles)
     end
   end
 end

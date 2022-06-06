@@ -90,17 +90,21 @@ defmodule Dagger.Workflow.StateMachine do
         {:->, _meta, [lhs, _rhs]} = _clause, wrk ->
           # we need to build a node here that grabs last known state of the accumulator to match against in conjunction with the input command
           # state condition: "is the input and state what I want for this clauses' rhs?"
-          {state_cond_fun, _} =
-            Code.eval_quoted(
-              {:fn, [],
-               [
-                 {:->, [], [lhs, true]}
-               ]}
-            )
+          state_cond_quoted =
+            {:fn, [],
+             [
+               {:->, [], [lhs, true]},
+               # anything otherwise: false
+               {:->, [], [[{:_, [], Elixir}, {:_, [], Elixir}], false]}
+             ]}
+
+          IO.inspect(Macro.to_string(state_cond_quoted), label: "state_cond as string")
+
+          {state_cond_fun, _} = Code.eval_quoted(state_cond_quoted)
 
           state_cond = StateCondition.new(state_cond_fun, accumulator.hash)
 
-          arity_check = Steps.is_of_arity?(2)
+          arity_check = Steps.is_of_arity?(1)
           arity_condition = Condition.new(arity_check)
 
           wrk
@@ -152,7 +156,9 @@ defmodule Dagger.Workflow.StateMachine do
   defp accumulator_of(init, reducer) do
     init_fun =
       if Macro.quoted_literal?(init) do
-        fn -> init end
+        fn ->
+          Code.eval_quoted(init) |> elem(0)
+        end
       else
         init
         |> Code.eval_quoted()

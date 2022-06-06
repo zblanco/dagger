@@ -237,8 +237,20 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.StateCondition do
         %Fact{} = fact
       ) do
     # get last known state or the init of the accumulator
-    last_known_state = last_known_state(sc.state_hash, workflow)
+    last_known_state =
+      last_known_state(sc.state_hash, workflow).()
+
     # check
+    sc_result = sc.work.(fact.value, last_known_state)
+
+    if sc_result do
+      workflow
+      |> Workflow.prepare_next_runnables(sc, fact)
+      |> Workflow.draw_connection(fact, sc.hash, :satisfied)
+      |> Workflow.mark_runnable_as_ran(sc, fact)
+    else
+      Workflow.mark_runnable_as_ran(workflow, sc, fact)
+    end
   end
 
   defp last_known_state(state_hash, workflow) do
@@ -246,7 +258,10 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.StateCondition do
     |> Graph.out_edges(state_hash)
     |> Enum.filter(&(&1.label == :state_produced and &1.v1.generation == workflow.generation - 1))
     |> List.first(%{})
-    |> Map.get(:v1)
+    |> Map.get(:v1) ||
+      workflow.flow.vertices
+      |> Map.get(state_hash)
+      |> Map.get(:init)
   end
 
   def match_or_execute(_state_condition), do: :match
@@ -313,8 +328,10 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Accumulator do
     |> Map.get(:v1)
   end
 
-  defp init_fact(%Accumulator{init: init, hash: hash}),
-    do: Fact.new(value: init, ancestry: {hash, Steps.fact_hash(init)})
+  defp init_fact(%Accumulator{init: init, hash: hash}) do
+    init = init.()
+    Fact.new(value: init, ancestry: {hash, Steps.fact_hash(init)})
+  end
 end
 
 defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Join do
