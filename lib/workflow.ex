@@ -68,7 +68,6 @@ defmodule Dagger.Workflow do
 
     struct!(__MODULE__, params)
     |> Map.put(:flow, flow)
-    |> Map.put(:activations, %{})
     |> Map.put(:memory, new_memory())
     |> Map.put_new(:name, UUID.uuid4())
   end
@@ -179,11 +178,14 @@ defmodule Dagger.Workflow do
   end
 
   @doc """
-  `plan/1` will, for all next left hand side / match phase runnables, activate the next layer - preparing the next layer if necessary.
+  `plan/1` will, for all next left hand side / match phase runnables activate and prepare next match runnables.
   """
   def plan(%__MODULE__{} = wrk) do
     wrk
+    |> maybe_prepare_next_generation_from_state_accumulations()
+    |> IO.inspect(label: "workflow after state accumulation generation prep")
     |> next_match_runnables()
+    |> IO.inspect(label: "next_match_runnables")
     |> Enum.reduce(wrk, fn {node, fact}, wrk ->
       Activation.activate(node, wrk, fact)
     end)
@@ -279,18 +281,37 @@ defmodule Dagger.Workflow do
     %__MODULE__{wrk | memory: Graph.add_edge(memory, node_1, node_2, label: connection)}
   end
 
+  # def connect_steps(%__MODULE__{flow: flow} = wrk, step_1, step_2, connection) do
+  #   %__MODULE__{wrk | memory: Graph.add_edge(flow, step_1, step_2, label: connection)}
+  # end
+
   def log_fact(%__MODULE__{memory: memory} = wrk, %Fact{} = fact) do
-    %__MODULE__{wrk | memory: Graph.add_vertex(memory, fact)}
+    %__MODULE__{
+      wrk
+      | memory:
+          memory
+          |> Graph.add_vertex(fact)
+          |> Graph.add_edge(wrk.generations, fact, label: :generation)
+    }
   end
 
-  @spec prepare_next_generation(Workflow.t(), Fact.t()) :: Workflow.t()
+  @spec prepare_next_generation(Workflow.t(), Fact.t() | list(Fact.t())) :: Workflow.t()
   @doc false
-  def prepare_next_generation(%__MODULE__{} = workflow, fact) do
+  def prepare_next_generation(%__MODULE__{} = workflow, %Fact{} = fact) do
     next_generation = workflow.generations + 1
 
     workflow
     |> Map.put(:generations, next_generation)
     |> draw_connection(fact, next_generation, :generation)
+  end
+
+  def prepare_next_generation(%__MODULE__{} = workflow, [%Fact{} | _] = facts)
+      when is_list(facts) do
+    next_generation = workflow.generations + 1
+
+    Enum.reduce(facts, Map.put(workflow, :generations, next_generation), fn fact, wrk ->
+      draw_connection(wrk, fact, next_generation, :generation)
+    end)
   end
 
   @spec prepare_next_runnables(Workflow.t(), any(), Fact.t()) :: any
@@ -359,7 +380,7 @@ defmodule Dagger.Workflow do
 
   def productions(%__MODULE__{memory: memory}) do
     for %Graph.Edge{} = edge <- Graph.edges(memory),
-        edge.label == :produced or edge.label == :state_produced do
+        edge.label == :produced or edge.label == :state_produced or edge.label == :state_initiated do
       edge.v2
     end
   end
@@ -439,19 +460,124 @@ defmodule Dagger.Workflow do
     |> Enum.map(&{&1, Fact.new(value: raw_fact)})
   end
 
-  defp next_match_runnables(%__MODULE__{flow: flow, memory: memory, generations: generation}) do
-    current_generation_fact = fact_for_generation(memory, generation)
+  @doc false
+  def last_known_state(%__MODULE__{} = workflow, state_hash) do
+    state_from_memory =
+      workflow.memory
+      |> Graph.out_edges(state_hash)
+      |> Enum.filter(&(&1.label == :state_produced))
+      |> List.first(%{})
+      |> Map.get(:v2)
 
-    for %Graph.Edge{} = edge <- Graph.out_edges(memory, current_generation_fact),
-        edge.label == :matchable do
-      {Map.get(flow.vertices, edge.v2), current_generation_fact}
+    init_state =
+      workflow.flow.vertices
+      |> Map.get(state_hash)
+      |> Map.get(:init)
+
+    unless is_nil(state_from_memory) do
+      state_from_memory
+      |> Map.get(:value)
+      |> invoke_init()
+    else
+      invoke_init(init_state)
     end
+  end
+
+  defp invoke_init(init) when is_function(init), do: init.()
+  defp invoke_init(init), do: init
+
+  defp maybe_prepare_next_generation_from_state_accumulations(
+         %__MODULE__{flow: flow, memory: memory, generations: generation} = workflow
+       ) do
+    # we need the last state produced fact for all accumulators from the current generation
+    state_produced_facts_by_ancestor =
+      for generation_edge <- Graph.out_edges(memory, generation),
+          generation_edge.label == :generation do
+        for connection <- Graph.in_edges(memory, generation_edge.v2),
+            connection.label == :state_produced do
+          connection.v2
+        end
+      end
+      |> List.flatten()
+      |> Enum.reduce(%{}, fn %{ancestry: {accumulator_hash, _}} = state_produced_fact, acc ->
+        Map.put(acc, accumulator_hash, state_produced_fact)
+      end)
+      |> IO.inspect(label: "state_produced_facts_by_ancestor")
+
+    stateful_matching_impls =
+      stateful_matching_impls() |> IO.inspect(label: "stateful_matching_impls")
+
+    state_produced_fact_ancestors = Map.keys(state_produced_facts_by_ancestor)
+
+    unless Enum.empty?(state_produced_facts_by_ancestor) do
+      workflow = prepare_next_generation(workflow, Map.values(state_produced_facts_by_ancestor))
+
+      Graph.Reducers.Bfs.reduce(flow, workflow, fn
+        node, wrk ->
+          if node.__struct__ in stateful_matching_impls do
+            state_hash = Dagger.Workflow.StatefulMatching.matches_on(node)
+
+            if state_hash in state_produced_fact_ancestors do
+              relevant_state_produced_fact = Map.get(state_produced_facts_by_ancestor, state_hash)
+
+              {:next,
+               draw_connection(
+                 wrk,
+                 relevant_state_produced_fact,
+                 node.hash,
+                 connection_for_activatable(node)
+               )}
+            else
+              {:next, wrk}
+            end
+          else
+            {:next, wrk}
+          end
+      end)
+    else
+      workflow
+    end
+
+    # how to access relevant match nodes for the state produced facts?
+    # ideally we want an edge between accumulators and match conditions that we can ignore in normal dataflow scenarios
+    # we need to access the subset of an accumulator's match nodes quickly and without iteration over irrelevant flowables
+  end
+
+  defp stateful_matching_impls,
+    do: Dagger.Workflow.StatefulMatching.__protocol__(:impls) |> elem(1)
+
+  defp next_match_runnables(%__MODULE__{flow: flow, memory: memory, generations: generation}) do
+    current_generation_facts =
+      facts_for_generation(memory, generation) |> IO.inspect(label: "current_generation_fact")
+
+    Enum.flat_map(current_generation_facts, fn current_generation_fact ->
+      for %Graph.Edge{} = edge <- Graph.edges(memory),
+          edge.label == :matchable do
+        IO.inspect(edge)
+        {Map.get(flow.vertices, edge.v2), current_generation_fact}
+      end
+    end)
+
+    # current_generation_facts =
+    #   facts_for_generation(memory, generation) |> IO.inspect(label: "current_generation_fact")
+
+    # Enum.flat_map(current_generation_facts, fn current_generation_fact ->
+    #   for %Graph.Edge{} = edge <- Graph.out_edges(memory, current_generation_fact),
+    #       edge.label == :matchable do
+    #     {Map.get(flow.vertices, edge.v2), current_generation_fact}
+    #   end
+    # end)
   end
 
   defp fact_for_generation(memory, generation) do
     memory
     |> Graph.in_neighbors(generation)
     |> List.first()
+  end
+
+  defp facts_for_generation(memory, generation) do
+    memory
+    |> Graph.in_neighbors(generation)
   end
 
   def next_steps(%__MODULE__{flow: flow}, parent_step) do

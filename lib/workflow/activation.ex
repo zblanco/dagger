@@ -129,6 +129,8 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Step do
         %Workflow{} = workflow,
         %Fact{} = fact
       ) do
+    IO.inspect(step, label: "step")
+    IO.inspect(fact, label: "fact")
     result = Steps.run(step.work, fact.value, Steps.arity_of(step.work))
 
     result_fact = Fact.new(value: result, ancestry: {step.hash, fact.hash})
@@ -203,7 +205,8 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.MemoryAssertion do
         %Workflow{} = workflow,
         %Fact{} = fact
       ) do
-    if ma.memory_assertion.(workflow.memory) do
+    if ma.memory_assertion.(workflow)
+       |> IO.inspect(label: "memory assertion: #{ma.hash} result") do
       workflow
       |> Workflow.prepare_next_runnables(ma, fact)
       |> Workflow.draw_connection(fact, ma.hash, :satisfied)
@@ -216,6 +219,44 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.MemoryAssertion do
   def match_or_execute(_memory_assertion), do: :match
   # def runnable_connection(_memory_assertion), do: :matchable
   # def resolved_connection(_memory_assertion), do: :satisfied
+end
+
+defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.StateReaction do
+  alias Dagger.Workflow
+
+  alias Dagger.Workflow.{
+    Fact,
+    Steps,
+    StateReaction
+  }
+
+  def activate(
+        %StateReaction{} = sr,
+        %Workflow{} = workflow,
+        %Fact{} = fact
+      ) do
+    last_known_state = Workflow.last_known_state(workflow, sr.state_hash)
+
+    IO.inspect(last_known_state, label: "last_known_state")
+    IO.inspect(sr, label: "state reaction")
+    IO.inspect(fact, label: "fact")
+
+    result = Steps.run(sr.work, last_known_state, sr.arity) |> IO.inspect(label: "result")
+
+    unless result == {:error, :no_match_of_lhs_in_reactor_fn} do
+      result_fact = Fact.new(value: result, ancestry: {sr.hash, fact.hash})
+
+      workflow
+      |> Workflow.log_fact(result_fact)
+      |> Workflow.draw_connection(sr.hash, result_fact, :produced)
+      |> Workflow.prepare_next_runnables(sr, result_fact)
+      |> Workflow.mark_runnable_as_ran(sr, fact)
+    else
+      Workflow.mark_runnable_as_ran(workflow, sr, fact)
+    end
+  end
+
+  def match_or_execute(_state_reaction), do: :execute
 end
 
 defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.StateCondition do
@@ -236,9 +277,7 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.StateCondition do
         %Workflow{} = workflow,
         %Fact{} = fact
       ) do
-    # get last known state or the init of the accumulator
-    last_known_state =
-      last_known_state(sc.state_hash, workflow).()
+    last_known_state = Workflow.last_known_state(workflow, sc.state_hash)
 
     # check
     sc_result = sc.work.(fact.value, last_known_state)
@@ -251,17 +290,6 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.StateCondition do
     else
       Workflow.mark_runnable_as_ran(workflow, sc, fact)
     end
-  end
-
-  defp last_known_state(state_hash, workflow) do
-    workflow.memory
-    |> Graph.out_edges(state_hash)
-    |> Enum.filter(&(&1.label == :state_produced and &1.v1.generation == workflow.generation - 1))
-    |> List.first(%{})
-    |> Map.get(:v1) ||
-      workflow.flow.vertices
-      |> Map.get(state_hash)
-      |> Map.get(:init)
   end
 
   def match_or_execute(_state_condition), do: :match
@@ -306,7 +334,7 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Accumulator do
 
       workflow
       |> Workflow.log_fact(init_fact)
-      |> Workflow.draw_connection(acc.hash, init_fact, :state_produced)
+      |> Workflow.draw_connection(acc.hash, init_fact, :state_initiated)
       |> Workflow.prepare_next_runnables(acc, fact)
       |> Workflow.log_fact(next_state_produced_fact)
       |> Workflow.draw_connection(acc.hash, next_state_produced_fact, :state_produced)
@@ -322,10 +350,9 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Accumulator do
   defp last_known_state(workflow, accumulator) do
     workflow.memory
     |> Graph.out_edges(accumulator.hash)
-    # we might want generational nodes ? maybe a property on the edge label of a state produced connection?
-    |> Enum.filter(&(&1.label == :state_produced and &1.v1.generation == workflow.generation - 1))
+    |> Enum.filter(&(&1.label == :state_produced))
     |> List.first(%{})
-    |> Map.get(:v1)
+    |> Map.get(:v2)
   end
 
   defp init_fact(%Accumulator{init: init, hash: hash}) do

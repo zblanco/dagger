@@ -8,11 +8,15 @@ defmodule Dagger.Workflow.MemoryAssertion do
   When activated for a given fact a stateful condition will assess its set of required ancestors for which
   the given fact must have been produced by or by which must be in memory.
   """
-  defstruct memory_assertion: nil, hash: nil
+  defstruct memory_assertion: nil, hash: nil, state_hash: nil
 
   alias Dagger.Workflow.Steps
 
-  def new(memory_assertion) do
-    %__MODULE__{memory_assertion: memory_assertion, hash: Steps.work_hash(memory_assertion)}
+  def new(memory_assertion, state_hash) do
+    %__MODULE__{
+      state_hash: state_hash,
+      memory_assertion: memory_assertion,
+      hash: Steps.work_hash(memory_assertion)
+    }
   end
 end

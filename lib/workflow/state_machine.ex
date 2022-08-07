@@ -36,10 +36,10 @@ defmodule Dagger.Workflow.StateMachine do
   # alias Dagger.Workflow.Rule
   alias Dagger.Workflow
   alias Dagger.Workflow.Steps
-  alias Dagger.Workflow.Step
   alias Dagger.Workflow.Condition
   alias Dagger.Workflow.MemoryAssertion
   alias Dagger.Workflow.StateCondition
+  alias Dagger.Workflow.StateReaction
   # alias Dagger.Workflow.Fact
   alias Dagger.Workflow.Accumulator
 
@@ -111,6 +111,8 @@ defmodule Dagger.Workflow.StateMachine do
           |> Workflow.add_step(arity_condition)
           |> Workflow.add_step(arity_condition, state_cond)
           |> Workflow.add_step(state_cond, accumulator)
+
+          # %{wrk | flow: wrk.flow |> Graph.add_edge(accumulator, state_cond, label: :stateful)}
       end
     )
   end
@@ -120,38 +122,83 @@ defmodule Dagger.Workflow.StateMachine do
   defp add_reactors(workflow, reactors, accumulator) do
     Enum.reduce(reactors, workflow, fn
       {:fn, _meta, [{:->, _, [lhs, _rhs]}]} = reactor, wrk ->
-        memory_assertion_fn = fn memory ->
-          last_known_state =
-            memory
-            |> Graph.out_edges(accumulator.hash)
-            |> Enum.filter(
-              &(&1.label == :state_produced and &1.v1.generation == workflow.generation - 1)
-            )
-            |> List.first(%{})
-            |> Map.get(:v1)
+        memory_assertion_fn = fn wrk ->
+          last_known_state = last_known_state(accumulator.hash, wrk)
 
-          {check_fn, _} =
-            Code.eval_quoted(
-              {:fn, [],
-               [
-                 {:->, [], [lhs, true]},
-                 {:->, [], [[{:_otherwise, [], Elixir}], false]}
-               ]}
-            )
+          check_fn_ast =
+            {:fn, [],
+             [
+               {:->, [], [lhs, true]},
+               {:->, [], [[{:_otherwise, [], Elixir}], false]}
+             ]}
+
+          {check_fn, _} = Code.eval_quoted(check_fn_ast)
+
+          IO.inspect(Macro.to_string(check_fn_ast), label: "check_fn_ast")
 
           check_fn.(last_known_state)
         end
 
-        memory_assertion = MemoryAssertion.new(memory_assertion_fn)
+        memory_assertion = MemoryAssertion.new(memory_assertion_fn, accumulator.hash)
 
-        {reactor_fn, _} = Code.eval_quoted(reactor)
-        reaction = Step.new(work: reactor_fn)
+        IO.inspect(Macro.to_string(reactor), label: "reactor_ast")
+        state_reaction = reactor_of(reactor, accumulator, Steps.arity_of(reactor))
 
         wrk
         |> Workflow.add_step(memory_assertion)
-        |> Workflow.add_step(memory_assertion, reaction)
+        |> Workflow.add_step(memory_assertion, state_reaction)
     end)
   end
+
+  defp reactor_of(
+         {:fn, _meta, [{:->, _, [lhs, rhs]}]},
+         %Accumulator{} = accumulator,
+         1 = _arity
+       ) do
+    reactor_ast =
+      {:fn, [],
+       [
+         {:->, [], [lhs, rhs]},
+         # todo conditionally include catch all for mismatch
+         {:->, [], [[{:_otherwise, [], Elixir}], {:error, :no_match_of_lhs_in_reactor_fn}]}
+       ]}
+
+    {reactor_fn, _} = Code.eval_quoted(reactor_ast)
+
+    StateReaction.new(reactor_fn, accumulator.hash, reactor_ast)
+  end
+
+  # defp reactor_of({:fn, _meta, [{:->, _, [lhs, _rhs]}]} = reactor, %Accumulator{} = accumulator, 2 = _arity) do
+  #   {reactor_fn, _} = Code.eval_quoted(reactor)
+
+  #   Step.new(work: reactor_fn)
+  # end
+
+  defp last_known_state(state_hash, workflow) do
+    state_from_memory =
+      workflow.memory
+      |> Graph.out_edges(state_hash)
+      |> IO.inspect(label: " Graph.out_edges(state_hash)")
+      |> Enum.filter(&(&1.label == :state_produced))
+      |> List.first(%{})
+      |> Map.get(:v2)
+
+    init_state =
+      workflow.flow.vertices
+      |> Map.get(state_hash)
+      |> Map.get(:init)
+
+    unless is_nil(state_from_memory) do
+      state_from_memory
+      |> Map.get(:value)
+      |> invoke_init()
+    else
+      invoke_init(init_state)
+    end
+  end
+
+  defp invoke_init(init) when is_function(init), do: init.()
+  defp invoke_init(init), do: init
 
   defp accumulator_of(init, reducer) do
     init_fun =
