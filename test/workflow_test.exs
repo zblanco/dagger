@@ -398,6 +398,14 @@ defmodule WorkflowTest do
     end
 
     test "stateful rules" do
+      Dagger.rule(
+        condition: [
+          Dagger.step_ran?(Dagger.step(fn -> Enum.random([:potato, "potato", "ham", :tomato]))),
+          fn p -> p == "potato" or p == :potato end,
+        ],
+        reaction: "potato confirmed"
+      )
+
     end
 
     test "accumulations" do
@@ -529,13 +537,13 @@ defmodule WorkflowTest do
       |> Workflow.reactions()
     end
 
-    test "a stateless pipeline workflow can be attached to another workflow as a dependent step" do
-      assert false
-    end
+    # test "a stateless pipeline workflow can be attached to another workflow as a dependent step" do
+    #   assert false
+    # end
 
-    test "a rule can be triggered from an accumulation event" do
-      assert false
-    end
+    # test "a rule can be triggered from an accumulation event" do
+    #   assert false
+    # end
   end
 
   describe "use cases" do

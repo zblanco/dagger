@@ -25,23 +25,18 @@ defmodule DaggerTest do
 
   describe "Dagger.rule/2 macro" do
     test "creates rules using anonymous functions" do
-      rule1 = Dagger.rule(fn :potato -> "potato!" end, name: "rule1")
-      rule2 = Dagger.rule(fn "potato" -> "potato!" end, name: "rule1")
-      rule3 = Dagger.rule(fn :tomato -> "tomato!" end, name: "rule1")
+      rule1 = Dagger.rule(fn :potato -> "potato!" end)
+      rule2 = Dagger.rule(fn "potato" -> "potato!" end)
+      rule3 = Dagger.rule(fn :tomato -> "tomato!" end)
 
       rule4 =
-        Dagger.rule(fn item when is_integer(item) and item > 41 and item < 43 -> "fourty two" end,
-          name: "rule1"
-        )
+        Dagger.rule(fn item when is_integer(item) and item > 41 and item < 43 -> "fourty two" end)
 
       rule5 =
-        Dagger.rule(
-          fn item when is_integer(item) and item > 41 and item < 43 ->
-            result = Enum.random(1..10)
-            result
-          end,
-          name: "rule1"
-        )
+        Dagger.rule(fn item when is_integer(item) and item > 41 and item < 43 ->
+          result = Enum.random(1..10)
+          result
+        end)
 
       rules = [rule1, rule2, rule3, rule4, rule5]
 
@@ -50,9 +45,7 @@ defmodule DaggerTest do
 
     test "created rules can be evaluated" do
       some_rule =
-        Dagger.rule(fn item when is_integer(item) and item > 41 and item < 43 -> "fourty two" end,
-          name: "rule1"
-        )
+        Dagger.rule(fn item when is_integer(item) and item > 41 and item < 43 -> "fourty two" end)
 
       assert Rule.check(some_rule, 42)
       refute Rule.check(some_rule, 45)
@@ -61,13 +54,11 @@ defmodule DaggerTest do
 
     test "a valid rule can be created from functions an arity > 1" do
       rule =
-        Dagger.rule(
-          fn num, other_num when is_integer(num) and is_integer(other_num) -> num * other_num end,
-          name: "multiplier"
-        )
+        Dagger.rule(fn num, other_num when is_integer(num) and is_integer(other_num) ->
+          num * other_num
+        end)
 
       assert match?(%Rule{}, rule)
-      # if we want this to return false - should we store context of a rule's arity?
       assert Rule.check(rule, :potato) == false
       assert Rule.check(rule, 10) == false
       assert Rule.check(rule, 1) == false
@@ -222,7 +213,7 @@ defmodule DaggerTest do
         |> Workflow.react()
         |> Workflow.productions()
 
-      # assert Enum.count(productions_from_1_cycles) == 2
+      assert Enum.count(productions_from_1_cycles) == 2
 
       workflow_after_2_cycles =
         potato_lock.workflow
