@@ -67,6 +67,20 @@ defmodule DaggerTest do
       assert Rule.run(rule, [10, 2]) == 20
       assert Rule.run(rule, [2, 90]) == 180
     end
+
+    test "escapes runtime values with '^'" do
+      some_values = [:potato, :ham, :tomato]
+
+      escaped_rule = Dagger.rule(
+        name: "escaped_rule",
+        condition: fn val when val in ^some_values -> true end,
+        # Perhaps dagger shouldn't support things guards don't? Maybe this should be an if statement inside the function?
+        reaction: "food"
+      )
+
+      assert match?(%Rule{}, escaped_rule)
+      assert Rule.check(escaped_rule, :potato)
+    end
   end
 
   describe "Dagger.step constructors" do

@@ -76,7 +76,7 @@ defimpl Dagger.Flowable, for: Dagger.Workflow.StateMachine do
   #     when is_list(reducers) do
   #   Enum.reduce(
   #     reducers,
-  #     Dagger.Workflow.merge(Dagger.Workflow.new(UUID.uuid4()), Dagger.Flowable.to_workflow(init)),
+  #     Dagger.Workflow.merge(Dagger.Workflow.new(Uniq.UUID.uuid4()), Dagger.Flowable.to_workflow(init)),
   #     fn reducer, wrk ->
   #       Dagger.Workflow.merge(wrk, Dagger.Flowable.to_workflow(reducer))
   #     end

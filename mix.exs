@@ -5,7 +5,7 @@ defmodule Dagger.MixProject do
     [
       app: :dagger,
       version: "0.1.0",
-      elixir: "~> 1.9",
+      elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       deps: deps()
     ]
@@ -21,8 +21,8 @@ defmodule Dagger.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:uuid, "~> 1.1"},
-      {:libgraph, github: "bitwalker/libgraph", branch: "main"}
+      {:uniq, "~> 0.5.3"},
+      {:libgraph, "~> 0.16.0"}
     ]
   end
 end

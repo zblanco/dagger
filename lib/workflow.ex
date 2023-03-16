@@ -38,7 +38,8 @@ defmodule Dagger.Workflow do
           name: String.t(),
           flow: Graph.t(),
           hash: binary(),
-          generations: integer()
+          generations: integer(),
+          context: map()
         }
 
   @type runnable() :: {fun(), term()}
@@ -49,7 +50,8 @@ defmodule Dagger.Workflow do
             generations: 0,
             hash: nil,
             flow: nil,
-            memory: nil
+            memory: nil,
+            context: nil
 
   @typedoc """
   A discrimination network of conditions, and steps, built from composites such as rules and accumulations.
@@ -69,7 +71,7 @@ defmodule Dagger.Workflow do
     struct!(__MODULE__, params)
     |> Map.put(:flow, flow)
     |> Map.put(:memory, new_memory())
-    |> Map.put_new(:name, UUID.uuid4())
+    |> Map.put_new(:name, Uniq.UUID.uuid4())
   end
 
   def new(params) when is_map(params) do

@@ -1,6 +1,4 @@
 %{
-  "expreso": {:hex, :expreso, "0.1.1", "7165da175f14f55d1a88f474389b05e7697f215c0c65423beb09d02db9babb95", [:mix], [], "hexpm", "6b1c83909111a74f93dadb62429da3abf2f256fe35523e909126dd5b476ff3c7"},
-  "libgraph": {:git, "https://github.com/bitwalker/libgraph.git", "180d7177cd8f19e62739bc8eb27f1174e63db74d", [branch: "main"]},
-  "norm": {:hex, :norm, "0.10.4", "3243baed73db6c9b54175a8f473bdac20f311a2b39415e3de0a6d205df767492", [:mix], [], "hexpm", "51884375a00a6f0c7206612543e268435662808c817f787bb3b544617f6a9174"},
-  "uuid": {:hex, :uuid, "1.1.8", "e22fc04499de0de3ed1116b770c7737779f226ceefa0badb3592e64d5cfb4eb9", [:mix], [], "hexpm", "c790593b4c3b601f5dc2378baae7efaf5b3d73c4c6456ba85759905be792f2ac"},
+  "libgraph": {:hex, :libgraph, "0.16.0", "3936f3eca6ef826e08880230f806bfea13193e49bf153f93edcf0239d4fd1d07", [:mix], [], "hexpm", "41ca92240e8a4138c30a7e06466acc709b0cbb795c643e9e17174a178982d6bf"},
+  "uniq": {:hex, :uniq, "0.5.3", "d9d54dac49fa4bb4b7fff0dd050281a8ded507813396de0507196347ecf53be1", [:mix], [{:ecto, "~> 3.0", [hex: :ecto, repo: "hexpm", optional: true]}], "hexpm", "6961e04cb62227f9f5fae3d8e26eede990826b885ba6e2f33973222cc856f2fb"},
 }

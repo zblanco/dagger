@@ -311,10 +311,19 @@ defmodule Dagger do
   end
 
   @doc """
-  Creates a step: a basic lambda expression that can be added to a workflow.
+  Accepts a boolean function
   """
-
   def condition(work) when is_function(work) do
     Condition.new(work)
   end
+
+  # @doc """
+  # Modulates a conditional expressions to require a step's fact production to have executed for the condition to pass.
+
+  # Accepts a step or an identifier (hash or name binding) to build into the network a check that requires
+  # the given step to have produced a fact before it will pass.
+  # """
+  # def step_ran?(step_expression_or_name) do
+
+  # end
 end

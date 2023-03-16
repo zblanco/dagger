@@ -398,13 +398,22 @@ defmodule WorkflowTest do
     end
 
     test "stateful rules" do
-      Dagger.rule(
-        condition: [
-          Dagger.step_ran?(Dagger.step(fn -> Enum.random([:potato, "potato", "ham", :tomato]))),
-          fn p -> p == "potato" or p == :potato end,
-        ],
-        reaction: "potato confirmed"
-      )
+      # step = Dagger.step(fn -> Enum.random([:potato, "potato", "ham", :tomato]) end)
+
+      # wrk = Dagger.workflow(
+      #   name: "with stateful rules",
+      #   steps: [Dagger.step(fn -> Enum.random([:potato, "potato", "ham", :tomato]) end)]
+      #   rules: []
+
+      # )
+
+      # Dagger.rule(
+      #   condition: [
+      #     Dagger.step_ran?(Dagger.step(fn -> Enum.random([:potato, "potato", "ham", :tomato]) end)),
+      #     fn p -> p == "potato" or p == :potato end,
+      #   ],
+      #   reaction: "potato confirmed"
+      # )
 
     end
 

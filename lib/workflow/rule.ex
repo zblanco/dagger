@@ -84,6 +84,7 @@ defmodule Dagger.Workflow.Rule do
     }
   end
 
+  @spec check(Dagger.Workflow.Rule.t(), any) :: boolean
   @doc """
   Checks a rule's left hand side.
   """
@@ -94,6 +95,7 @@ defmodule Dagger.Workflow.Rule do
     |> Workflow.is_runnable?()
   end
 
+  @spec run(Dagger.Workflow.Rule.t(), any) :: any
   @doc """
   Evaluates a rule, checking its left hand side, then evaluating the right.
   """
@@ -113,7 +115,8 @@ defmodule Dagger.Workflow.Rule do
   defp workflow_of_expression({:fn, _, [{:->, _, [[], rhs]}]} = expression, 0 = arity, _context) do
     reaction = reaction_step_of_rhs(expression, arity)
 
-    Steps.name_of_expression(rhs)
+    rhs
+    |> Steps.name_of_expression()
     |> Workflow.new()
     |> Workflow.add_step(reaction)
   end
@@ -121,7 +124,8 @@ defmodule Dagger.Workflow.Rule do
   defp workflow_of_expression({lhs, rhs}, arity, _context) when lhs in [true, nil] do
     reaction = reaction_step_of_rhs({lhs, rhs}, arity)
 
-    Steps.name_of_expression(rhs)
+    rhs
+    |> Steps.name_of_expression()
     |> Workflow.new()
     |> Workflow.add_step(reaction)
   end
@@ -149,13 +153,84 @@ defmodule Dagger.Workflow.Rule do
   end
 
   defp workflow_of_expression(
-         {{:fn, _, [{:->, _, [[{term, _meta, _context}], true]}]}, rhs},
+         {{:fn, _, [{:->, _, [[{term, meta, clauses}], true]}]} = lhs, rhs} = expression,
          arity,
          context
        )
        when is_atom(term) do
     if term |> to_string() |> String.first() == "_" do
       workflow_of_expression({nil, rhs}, arity, context)
+    else
+      # condition = Condition.new(Steps.work_of_lhs(lhs), arity)
+
+      false_branch = Steps.false_branch_for_lhs(lhs)
+
+      branches = [false_branch | clauses] |> Enum.reverse()
+
+      # check = Macro.prewalk(lhs, fn
+      #   {:^, _meta, [{bind, _, _} | _]} = ast ->
+      #     # IO.inspect(ast, label: "bind")
+      #     # IO.inspect(Macro.Env.location(context), label: "location")
+      #     # IO.inspect(Macro.Env.vars(context), label: "this")
+      #     # IO.inspect(context, label: "__CALLER__ context")
+      #     {function_name, function_arity} = context.function
+
+      #     context
+      #     |> Macro.Env.location()
+      #     |> File.read!()
+      #     |> Code.string_to_quoted!()
+      #     |> Macro.prewalk([], fn
+
+      #     end)
+      #     # retrieve runtime value from context and escape in
+      #     ast
+      #   ast -> ast
+      # end)
+      # |> Macro.to_string()
+      # |> IO.inspect(label: "new ast")
+
+      check =
+        Macro.prewalk(lhs, fn
+          {:^, _meta, [{bind, _, _} = expr]} = ast ->
+            # IO.inspect(ast, label: "bind")
+            # IO.inspect(Macro.Env.location(context), label: "location")
+            # IO.inspect(Macro.Env.vars(context), label: "this")
+            IO.inspect(context, label: "__CALLER__ context")
+            # {function_name, function_arity} = context.function
+
+            IO.inspect(expr, label: "expr ast")
+            IO.inspect(expr |> Macro.to_string, label: "expr")
+
+            IO.inspect(Macro.unique_var(bind, __MODULE__), label: "unique var")
+
+            Macro.Env.has_var?(context, {bind, nil}) |> IO.inspect(label: "has var?")
+
+            runtime_value =
+              Macro.Env.vars(context) |> IO.inspect(label: "Macro.Env.vars(context)[bind]")
+
+            if runtime_value do
+              var = Macro.unique_var(bind, __MODULE__)
+              # escape the runtime value into the AST
+              quote do: unquote(var)
+            else
+              ast
+            end
+
+          ast ->
+            ast
+        end)
+
+      # check = {:fn, meta, branches}
+
+      IO.inspect(Macro.to_string(check), label: "check of anonymous function")
+      {condition, _} = Code.eval_quoted(check, context)
+
+      reaction = reaction_step_of_rhs(rhs, arity)
+
+      expression
+      |> Steps.name_of_expression()
+      |> Workflow.new()
+      |> workflow_from_rule(condition, reaction)
     end
   end
 

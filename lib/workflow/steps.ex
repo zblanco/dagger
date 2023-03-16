@@ -86,7 +86,7 @@ defmodule Dagger.Workflow.Steps do
     name_of_expression(work, work_hash(work))
   end
 
-  def name_of_expression(_anything_else), do: UUID.uuid4()
+  def name_of_expression(_anything_else), do: Uniq.UUID.uuid4()
 
   def name_of_expression(work, hash) do
     fun_name = work |> Function.info(:name) |> elem(1)
@@ -243,6 +243,15 @@ defmodule Dagger.Workflow.Steps do
     false_branch = false_branch_for_lhs(lhs)
 
     branches = [false_branch | clauses] |> Enum.reverse()
+
+    # check = Macro.prewalk(lhs, fn
+    #   {:^, _meta, [{bind, _meta, _} | _]} = ast ->
+    #     # retrieve runtime value from context and escape in
+    #     ast
+    #   ast -> ast
+    # end)
+    # |> Macro.to_string()
+    # |> IO.inspect(label: "new ast")
 
     check = {:fn, meta, branches}
 
