@@ -83,17 +83,16 @@ defmodule Dagger do
       Keyword.get(opts, :condition)
       |> maybe_expand(__CALLER__)
 
+    # should we instead build the quoted anonymous function all the way here?
+
     reaction =
       Keyword.get(opts, :reaction) || raise ArgumentError, "Defining a rule requires a reaction"
-
-    description = Keyword.get(opts, :description)
 
     arity = Steps.arity_of(reaction)
 
     quote bind_quoted: [
             condition: Macro.escape(condition),
             reaction: Macro.escape(reaction),
-            description: description,
             arity: arity,
             rule_name: rule_name,
             context: Macro.escape(__CALLER__)
@@ -104,7 +103,6 @@ defmodule Dagger do
         expression,
         arity: arity,
         name: rule_name,
-        description: description,
         context: context
       )
     end
@@ -117,18 +115,15 @@ defmodule Dagger do
   """
   defmacro rule({:fn, _meta, _clauses} = expression, opts) do
     rule_name = Keyword.get(opts, :name)
-    description = Keyword.get(opts, :description)
 
     quote bind_quoted: [
             expression: Macro.escape(expression),
-            description: description,
             rule_name: rule_name,
             context: Macro.escape(__CALLER__)
           ] do
       Rule.new(
         expression,
         name: rule_name,
-        description: description,
         context: context
       )
     end
@@ -155,18 +150,15 @@ defmodule Dagger do
              opts
            ) do
     rule_name = Keyword.get(opts, :name)
-    description = Keyword.get(opts, :description)
 
     quote bind_quoted: [
             expression: Macro.escape(expression),
-            description: description,
             rule_name: rule_name,
             context: Macro.escape(__CALLER__)
           ] do
       Rule.new(
         expression,
         name: rule_name,
-        description: description,
         context: context
       )
     end
@@ -317,13 +309,11 @@ defmodule Dagger do
     Condition.new(work)
   end
 
-  # @doc """
-  # Modulates a conditional expressions to require a step's fact production to have executed for the condition to pass.
+  # defp rule_condition(condition) when is_function(condition) do
+  #   condition
+  # end
 
-  # Accepts a step or an identifier (hash or name binding) to build into the network a check that requires
-  # the given step to have produced a fact before it will pass.
-  # """
-  # def step_ran?(step_expression_or_name) do
-
+  # defp rule_condition() do
+  #   condition
   # end
 end

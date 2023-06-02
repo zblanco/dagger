@@ -29,31 +29,26 @@ defmodule RulesTest do
          stateless_rule:
            Dagger.rule(
              name: "stateless rule",
-             description: "a stateless rule that runs regardless of the input",
              reaction: fn _any -> "potato" end
            ),
          term_reaction_rule:
            Dagger.rule(
              name: "term_reaction",
-             description: "a rule that always returns a term",
              reaction: "potato"
            ),
          zero_arity_reaction_rule:
            Dagger.rule(
              name: "term_reaction",
-             description: "a rule that always returns a term",
              reaction: fn -> "potato" end
            ),
          zero_arity_anonymous_function_rule:
            Dagger.rule(
              fn -> "potato" end,
-             name: "term_reaction",
-             description: "a rule that always returns a term"
+             name: "term_reaction"
            ),
          anonymous_function_condition_rule:
            Dagger.rule(
              name: "anonymous_function_condition_rule",
-             description: "a rule that always returns a term",
              condition: fn _anything -> true end,
              reaction: "potato"
            ),
@@ -61,14 +56,12 @@ defmodule RulesTest do
            Dagger.rule(
              condition: fn _anything -> true end,
              reaction: "potato",
-             name: "a rule",
-             description: "a rule from an anonymous function with an always matching lhs"
+             name: "a rule"
            ),
          rule_from_anonymous_function_with_condition:
            Dagger.rule(
              fn :potato -> "potato" end,
-             name: "a rule",
-             description: "a rule made from an anonymous function's lhs and rhs"
+             name: "a rule"
            )
        ]}
     end
@@ -78,7 +71,6 @@ defmodule RulesTest do
                %Rule{},
                Dagger.rule(
                  name: "anonymous_function_condition_rule",
-                 description: "a rule that always returns a term",
                  condition: fn _anything -> true end,
                  reaction: "potato"
                )

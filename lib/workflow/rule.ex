@@ -19,7 +19,6 @@ defmodule Dagger.Workflow.Rule do
   alias Dagger.Workflow.Steps
 
   defstruct name: nil,
-            description: nil,
             arity: nil,
             expression: [],
             workflow: nil
@@ -29,7 +28,6 @@ defmodule Dagger.Workflow.Rule do
   """
   @type t() :: %__MODULE__{
           name: String.t(),
-          description: String.t(),
           arity: arity(),
           workflow: Workflow.t(),
           expression: expression()
@@ -66,18 +64,16 @@ defmodule Dagger.Workflow.Rule do
   )a
 
   @doc """
-  Constructs a rule struct given an expression and options. Expects the expression to be a tuple of a left a right hand side.
+  Constructs a `%Rule{}` given an expression and options.
   """
   def new(expression, opts \\ []) do
     name = Keyword.get(opts, :name) || Steps.name_of_expression(expression)
-    description = Keyword.get(opts, :description)
     context = Keyword.get(opts, :context)
     arity = Steps.arity_of(expression)
     workflow = workflow_of_expression(expression, arity, context)
 
     %__MODULE__{
       name: name,
-      description: description,
       arity: arity,
       expression: expression,
       workflow: workflow
@@ -161,11 +157,24 @@ defmodule Dagger.Workflow.Rule do
     if term |> to_string() |> String.first() == "_" do
       workflow_of_expression({nil, rhs}, arity, context)
     else
-      # condition = Condition.new(Steps.work_of_lhs(lhs), arity)
+      condition = Condition.new(Steps.work_of_lhs(lhs), arity)
 
       false_branch = Steps.false_branch_for_lhs(lhs)
 
       branches = [false_branch | clauses] |> Enum.reverse()
+
+      # check = Macro.prewalk(lhs, fn
+      #   {:^, _meta, [{bind, _, _} | _]} = ast ->
+
+      #   Macro.Env.has_var?(context, {bind, nil}) |> IO.inspect() # true
+
+      #   Macro.Env.vars(context) |> IO.inspect() # [some_values: nil]
+
+      #   var = Macro.unique_var(bind, __MODULE__)
+      #   quote do: unquote(var)
+
+      #   ast -> ast
+      # end)
 
       # check = Macro.prewalk(lhs, fn
       #   {:^, _meta, [{bind, _, _} | _]} = ast ->
@@ -189,41 +198,31 @@ defmodule Dagger.Workflow.Rule do
       # |> Macro.to_string()
       # |> IO.inspect(label: "new ast")
 
-      check =
-        Macro.prewalk(lhs, fn
-          {:^, _meta, [{bind, _, _} = expr]} = ast ->
-            # IO.inspect(ast, label: "bind")
-            # IO.inspect(Macro.Env.location(context), label: "location")
-            # IO.inspect(Macro.Env.vars(context), label: "this")
-            IO.inspect(context, label: "__CALLER__ context")
-            # {function_name, function_arity} = context.function
+      # {check, _vars} =
+      #   lhs
+      #   |> Macro.prewalker()
+      #   |> Enum.reduce(%{check: [], }, fn
+      #     {:^, _meta, [{bind, _, _} = expr]} = _ast, vars ->
+      #       var = Macro.unique_var(bind, __MODULE__)
+      #       {var, [{:=, meta, [var, expr]} | vars]}
 
-            IO.inspect(expr, label: "expr ast")
-            IO.inspect(expr |> Macro.to_string, label: "expr")
+      #     ast, _vars ->
+      #       ast
+      #   end)
 
-            IO.inspect(Macro.unique_var(bind, __MODULE__), label: "unique var")
+      check = {:fn, meta, branches}
 
-            Macro.Env.has_var?(context, {bind, nil}) |> IO.inspect(label: "has var?")
+      # quoted_check =
+      #   quote do
+      #     unquote_splicing(Enum.reverse(vars))
 
-            runtime_value =
-              Macro.Env.vars(context) |> IO.inspect(label: "Macro.Env.vars(context)[bind]")
+      #     unquote(check)
+      #   end
 
-            if runtime_value do
-              var = Macro.unique_var(bind, __MODULE__)
-              # escape the runtime value into the AST
-              quote do: unquote(var)
-            else
-              ast
-            end
-
-          ast ->
-            ast
-        end)
-
-      # check = {:fn, meta, branches}
+      # IO.inspect(Macro.to_string(unquoted_check), label: "unquoted_check")
 
       IO.inspect(Macro.to_string(check), label: "check of anonymous function")
-      {condition, _} = Code.eval_quoted(check, context)
+      {condition, _} = Code.eval_quoted(check, [], context)
 
       reaction = reaction_step_of_rhs(rhs, arity)
 
@@ -493,10 +492,17 @@ defmodule Dagger.Workflow.Rule do
   end
 
   defp reaction_step_of_rhs(
-         {:fn, _meta, [{:->, _, [_lhs, _rhs]}]} = quoted_fun_expression,
+         {:fn, _, [{:->, _, [[pattern], body]}]} = _expr,
          _arity
        ) do
-    {fun, _} = Code.eval_quoted(quoted_fun_expression)
+    # {fun, _} = Code.eval_quoted(expr)
+
+    fun_ast = quote do
+      fn unquote(pattern) -> unquote(body) end
+    end
+
+    fun = Macro.expand_once(fun_ast, __ENV__) |> IO.inspect(label: "fun123")
+
     Step.new(work: fun)
   end
 

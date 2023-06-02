@@ -191,8 +191,7 @@ defmodule WorkflowTest do
           name: "a test workflow",
           rules: [
             Dagger.rule(fn :foo -> :bar end,
-              name: "test rule",
-              description: "a rule description"
+              name: "test rule"
             ),
             Dagger.rule(fn
               :potato -> "potato!"
@@ -414,7 +413,6 @@ defmodule WorkflowTest do
       #   ],
       #   reaction: "potato confirmed"
       # )
-
     end
 
     test "accumulations" do

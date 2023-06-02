@@ -71,15 +71,31 @@ defmodule DaggerTest do
     test "escapes runtime values with '^'" do
       some_values = [:potato, :ham, :tomato]
 
-      escaped_rule = Dagger.rule(
-        name: "escaped_rule",
-        condition: fn val when val in ^some_values -> true end,
-        # Perhaps dagger shouldn't support things guards don't? Maybe this should be an if statement inside the function?
-        reaction: "food"
-      )
+      escaped_rule =
+        Dagger.rule(
+          name: "escaped_rule",
+          condition: fn val when val in ^some_values -> true end,
+          reaction: "food"
+        )
 
       assert match?(%Rule{}, escaped_rule)
       assert Rule.check(escaped_rule, :potato)
+    end
+
+    test "a function can wrap construction to build custom rules at runtime" do
+      builder = fn list_of_things ->
+        Dagger.rule(
+          name: "dynamic rule",
+          condition: fn thing -> Enum.member?(^list_of_things, thing) end,
+          reaction: fn thing -> "#{thing} in list_of_things!" end
+        )
+      end
+
+      dynamic_rule = builder.([:potato, :ham, :tomato])
+
+      assert match?(%Rule{}, dynamic_rule)
+      assert Rule.check(dynamic_rule, :potato)
+      refute Rule.check(dynamic_rule, :yam)
     end
   end
 
