@@ -60,9 +60,6 @@ defmodule Dagger.Workflow.StateMachine do
     name = Keyword.get(opts, :name) || Steps.name_of_expression(reducer)
     reactors = Keyword.get(opts, :reactors)
     workflow = workflow_of_state_machine_ast(init, reducer, reactors)
-    IO.inspect(reducer, label: "reducer")
-    IO.inspect(init, label: "init")
-    IO.inspect(opts, label: "opts")
 
     %__MODULE__{
       name: name,
@@ -98,8 +95,6 @@ defmodule Dagger.Workflow.StateMachine do
                {:->, [], [[{:_, [], Elixir}, {:_, [], Elixir}], false]}
              ]}
 
-          IO.inspect(Macro.to_string(state_cond_quoted), label: "state_cond as string")
-
           {state_cond_fun, _} = Code.eval_quoted(state_cond_quoted)
 
           state_cond = StateCondition.new(state_cond_fun, accumulator.hash)
@@ -134,14 +129,10 @@ defmodule Dagger.Workflow.StateMachine do
 
           {check_fn, _} = Code.eval_quoted(check_fn_ast)
 
-          IO.inspect(Macro.to_string(check_fn_ast), label: "check_fn_ast")
-
           check_fn.(last_known_state)
         end
 
         memory_assertion = MemoryAssertion.new(memory_assertion_fn, accumulator.hash)
-
-        IO.inspect(Macro.to_string(reactor), label: "reactor_ast")
         state_reaction = reactor_of(reactor, accumulator, Steps.arity_of(reactor))
 
         wrk
@@ -178,7 +169,6 @@ defmodule Dagger.Workflow.StateMachine do
     state_from_memory =
       workflow.memory
       |> Graph.out_edges(state_hash)
-      |> IO.inspect(label: " Graph.out_edges(state_hash)")
       |> Enum.filter(&(&1.label == :state_produced))
       |> List.first(%{})
       |> Map.get(:v2)

@@ -270,12 +270,8 @@ defmodule WorkflowTest do
 
       wrk = Workflow.plan(workflow, :potato)
 
-      wrk.memory
-      |> IO.inspect(label: "memory")
-
       wrk
       |> Workflow.matches()
-      |> IO.inspect(label: "matches")
     end
   end
 

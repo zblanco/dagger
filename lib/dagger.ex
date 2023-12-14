@@ -116,16 +116,28 @@ defmodule Dagger do
   defmacro rule({:fn, _meta, _clauses} = expression, opts) do
     rule_name = Keyword.get(opts, :name)
 
+    # arity = Steps.arity_of(expression)
+
+    # workflow = workflow_of_expression(expression, arity, context)
+
     quote bind_quoted: [
             expression: Macro.escape(expression),
             rule_name: rule_name,
-            context: Macro.escape(__CALLER__)
+            context: Macro.escape(__CALLER__),
+            binding: Macro.escape(binding())
           ] do
-      Rule.new(
-        expression,
-        name: rule_name,
-        context: context
-      )
+
+        # %Rule{
+        #   expression: expression,
+        #   name: rule_name,
+        #   context: context,
+        #   binding: binding
+        # }
+        Rule.new(
+          expression,
+          name: rule_name,
+          context: context
+        )
     end
   end
 
@@ -162,13 +174,6 @@ defmodule Dagger do
         context: context
       )
     end
-  end
-
-  defmacro rule(func, opts) do
-    IO.inspect(func, label: "func")
-    IO.inspect(opts, label: "opts")
-
-    func
   end
 
   def workflow(opts \\ []) do

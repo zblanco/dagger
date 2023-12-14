@@ -10,6 +10,7 @@ defmodule Dagger.Workflow.Steps do
   def memory_vertex_id(hash) when is_integer(hash), do: hash
   def memory_vertex_id(anything_otherwise), do: fact_hash(anything_otherwise)
 
+  @spec work_hash(fun | {atom, atom} | {atom, atom, byte}) :: non_neg_integer
   def work_hash({m, f}),
     do: work_hash({m, f, 1})
 
@@ -106,7 +107,7 @@ defmodule Dagger.Workflow.Steps do
              segment, acc ->
                {segment, acc}
            end) do
-      accumulation_of_ast |> IO.inspect(label: "accumulation_of_ast")
+      accumulation_of_ast
     end
   end
 
@@ -131,17 +132,13 @@ defmodule Dagger.Workflow.Steps do
                _dot_opts, _dot_etc}
               | [_arity]
             ]}
-         ]} = captured_function
+         ]} = _captured_function
       ) do
-    IO.inspect(captured_function, label: "captured_function")
-    IO.inspect(Macro.to_string(captured_function), label: "to_string captured_function")
-
     root_module =
       case Keyword.fetch(aliasing_opts, :counter) do
         {:ok, {root_module, _}} -> root_module
         :error -> List.first(aliases)
       end
-      |> IO.inspect(label: "root_module")
 
     captured_function_module_string =
       [root_module | aliases]
@@ -169,8 +166,6 @@ defmodule Dagger.Workflow.Steps do
   #           ]}
   #        ]} = captured_function
   #     ) do
-  #   IO.inspect(captured_function, label: "captured_function")
-  #   IO.inspect(Macro.to_string(captured_function), label: "to_string captured_function")
 
   #   root_module = Keyword.get(aliasing_opts, :counter) |> elem(0)
 
@@ -207,21 +202,16 @@ defmodule Dagger.Workflow.Steps do
       lhs_conditions =
         clauses
         |> Enum.map(fn {:def, _meta, [{_function_name, _clause_meta, clause_lhs}, _clause_rhs]} ->
-          # ast = {:fn, [], [{:->, [], clause_lhs}, [do: true]]}
           ast = {:fn, [], [{:->, [], [clause_lhs, true]}]}
-
-          IO.inspect(Macro.to_string(ast), label: "ast of def function rewrite")
           ast
         end)
 
-      # workflow vs rule?
-      {lhs_conditions, rhs} |> IO.inspect(label: "our weird ass def rewrite")
+      {lhs_conditions, rhs}
     end
   end
 
   def expression_of_clauses(clauses) when is_list(clauses) do
     clauses
-    |> IO.inspect(label: "clauses")
     |> Enum.map(&expression_of_clauses/1)
     |> List.flatten()
   end
@@ -239,7 +229,6 @@ defmodule Dagger.Workflow.Steps do
   end
 
   def work_of_lhs({:fn, meta, clauses} = lhs) do
-    IO.inspect(lhs, label: "work_of_lhs input")
     false_branch = false_branch_for_lhs(lhs)
 
     branches = [false_branch | clauses] |> Enum.reverse()
@@ -251,15 +240,9 @@ defmodule Dagger.Workflow.Steps do
     #   ast -> ast
     # end)
     # |> Macro.to_string()
-    # |> IO.inspect(label: "new ast")
 
     check = {:fn, meta, branches}
 
-    Macro.prewalk(lhs, fn
-      ast -> IO.inspect(ast, label: "ast of anonymous fun")
-    end)
-
-    IO.inspect(Macro.to_string(check), label: "check of anonymous function")
     {fun, _} = Code.eval_quoted(check)
     fun
   end
@@ -277,25 +260,18 @@ defmodule Dagger.Workflow.Steps do
   #           ]}
   #        ]} = captured_function
   #     ) do
-  #   aliases = Macro.expand(alias_opts, __ENV__) |> IO.inspect(label: "alias_opts expanded")
-
-  #   IO.inspect(captured_function, label: "quoted captured_function")
-  #   IO.inspect(Macro.to_string(captured_function), label: "captured_function")
+  #   aliases = Macro.expand(alias_opts, __ENV__)
   #   {fun, _} = Code.eval_quoted(captured_function, [], aliases: [aliases])
   #   fun
   # end
 
   def work_of_lhs({:&, _, [{:/, _, _}]} = captured_function) do
-    IO.inspect(captured_function, label: "quoted captured_function")
-    IO.inspect(Macro.to_string(captured_function), label: "captured_function")
-
     {fun, _} = Code.eval_quoted(captured_function)
 
     fun
   end
 
   def work_of_lhs(lhs) do
-    IO.inspect(lhs, label: "lhs in catch all")
     false_branch = false_branch_for_lhs(lhs)
     # false_branch = {:->, [], [[{:_, [], Elixir}], false]}
 
@@ -304,8 +280,6 @@ defmodule Dagger.Workflow.Steps do
       |> Enum.reverse()
 
     check = {:fn, [], branches}
-
-    IO.inspect(Macro.to_string(check), label: "check")
     {fun, _} = Code.eval_quoted(check)
     fun
   end
@@ -315,29 +289,23 @@ defmodule Dagger.Workflow.Steps do
   end
 
   def work_of_rhs(lhs, rhs) when is_function(lhs) do
-    IO.inspect(rhs, label: "workofrhs")
-
     rhs =
       {:fn, [],
        [
          {:->, [], [[{:_, [], Elixir}], rhs]}
        ]}
 
-    IO.inspect(Macro.to_string(rhs), label: "rhs as string when is_function")
     {fun, _} = Code.eval_quoted(rhs)
     fun
   end
 
   def work_of_rhs(lhs, rhs) do
-    IO.inspect(rhs, label: "workofrhs")
-
     rhs =
       {:fn, [],
        [
          {:->, [], [lhs, rhs]}
        ]}
 
-    IO.inspect(Macro.to_string(rhs), label: "rhs as string for arbitrary lhs/rhs")
     {fun, _} = Code.eval_quoted(rhs)
     fun
   end
@@ -360,32 +328,7 @@ defmodule Dagger.Workflow.Steps do
     {:->, [], [[{:_, [], Elixir}], false]}
   end
 
-  # defp check_branch_of_expression(lhs) when is_function(lhs) do
-  #   # quote bind_quoted: [lhs: lhs] do
-  #   #   fn lhs
-  #   # end
-
-  #   wrapper =
-  #     quote bind_quoted: [lhs: lhs] do
-  #       fn input ->
-  #         try do
-  #           IO.inspect(apply(lhs, input), label: "application")
-  #         rescue
-  #           true -> true
-  #           otherwise ->
-  #             IO.inspect(otherwise, label: "otherwise")
-  #             false
-  #         end
-  #       end
-  #     end
-
-  #   IO.inspect(Macro.to_string(wrapper), label: "wrapper")
-
-  #   {:->, [], [[:_], wrapper]}
-  # end
-
   def check_branch_of_expression(lhs) when is_list(lhs) do
-    IO.inspect(lhs, label: "lhx in check_branch_of_expression/1")
     {:->, [], [lhs, true]}
   end
 

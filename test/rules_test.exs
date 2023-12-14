@@ -104,12 +104,9 @@ defmodule RulesTest do
     end
 
     test "we can create a rule that always fires" do
-      always_fires_rule_arity_1 =
-        Dagger.rule(fn _anything -> :potato end, name: "1_arity_rule")
-        |> IO.inspect(label: "1_arity_rule")
+      always_fires_rule_arity_1 = Dagger.rule(fn _anything -> :potato end, name: "1_arity_rule")
 
-      always_fires_rule_arity_0 =
-        Dagger.rule(fn -> :potato end, name: "0_arity_rule") |> IO.inspect(label: "0_arity_rule")
+      always_fires_rule_arity_0 = Dagger.rule(fn -> :potato end, name: "0_arity_rule")
 
       inputs = [
         "potato",
@@ -121,15 +118,11 @@ defmodule RulesTest do
 
       assert Enum.all?(Enum.map(inputs, &Rule.check(always_fires_rule_arity_1, &1)))
 
-      assert Enum.all?(
-               Enum.map(inputs, &Rule.check(always_fires_rule_arity_0, &1))
-               |> IO.inspect()
-             )
+      assert Enum.all?(Enum.map(inputs, &Rule.check(always_fires_rule_arity_0, &1)))
 
       assert Enum.all?(Enum.map(inputs, &(Rule.run(always_fires_rule_arity_1, &1) == :potato)))
 
       Enum.map(inputs, &(Rule.run(always_fires_rule_arity_0, &1) == :potato))
-      |> IO.inspect(label: "Rule.run/2 on :potato")
     end
 
     test "a rule can be made out of functions with an arity of 0 or 1" do
@@ -141,19 +134,16 @@ defmodule RulesTest do
       Dagger.Flowable.to_workflow(
         Dagger.rule(fn :potato_seed -> :potato end, name: "1_arity_rule")
       )
-      |> IO.inspect(label: "runnable workflow")
 
       Dagger.Flowable.to_workflow(
         Dagger.rule(fn _anything -> :potato end, name: "1_arity_anything_rule")
       )
-      |> IO.inspect(label: "runnable workflow")
 
       assert match?(%Rule{}, Dagger.rule(fn -> :potato end, name: "0_arity_rule"))
 
       assert match?(
                %Rule{},
                Dagger.rule(fn :potato -> :potato end, name: "1_arity_rule")
-               |> IO.inspect(label: "1_arity_rule")
              )
 
       assert match?(
@@ -168,7 +158,6 @@ defmodule RulesTest do
                Dagger.rule(&RulesTest.Examples.potato_baker/1,
                  name: "1_arity_rule_from_captured_function_with_overloads"
                )
-               |> IO.inspect()
              )
 
       assert match?(
@@ -181,15 +170,13 @@ defmodule RulesTest do
                Dagger.rule(&Examples.potato_block_transformer/1,
                  name: "1_arity_rule_from_block_func_definition"
                )
-               |> IO.inspect()
              )
     end
 
     test "a rule's reaction can return an arbitrary term" do
-      term_rule =
-        Dagger.rule(reaction: "potato", name: "term_rule") |> IO.inspect(label: "term_rule")
+      term_rule = Dagger.rule(reaction: "potato", name: "term_rule")
 
-      Dagger.Flowable.to_workflow(term_rule) |> IO.inspect(label: "term rule workflow")
+      Dagger.Flowable.to_workflow(term_rule)
 
       term_rule_with_condition =
         Dagger.rule(
@@ -197,7 +184,6 @@ defmodule RulesTest do
           reaction: "potato",
           name: "term_rule_with_captured_function_condition"
         )
-        |> IO.inspect(label: "term_rule_with_captured_function_condition")
 
       assert Rule.check(term_rule_with_condition, "ham") == false
       assert Rule.check(term_rule_with_condition, nil) == false
@@ -231,7 +217,6 @@ defmodule RulesTest do
           reaction: "potato",
           name: "rule from list of conditions"
         )
-        |> IO.inspect(label: "rule_from_list_of_conditions")
 
       # given arbitrary inputs assessing these rules - which rule when checked results in the most other conditions passing?
       # assess that rule first if at all possible

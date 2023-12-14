@@ -210,7 +210,7 @@ defmodule Dagger.Workflow.Rule do
       #       ast
       #   end)
 
-      check = {:fn, meta, branches}
+      # check = {:fn, meta, branches}
 
       # quoted_check =
       #   quote do
@@ -221,8 +221,7 @@ defmodule Dagger.Workflow.Rule do
 
       # IO.inspect(Macro.to_string(unquoted_check), label: "unquoted_check")
 
-      IO.inspect(Macro.to_string(check), label: "check of anonymous function")
-      {condition, _} = Code.eval_quoted(check, [], context)
+      # {condition, _} = Code.eval_quoted(check, binding(context), context)
 
       reaction = reaction_step_of_rhs(rhs, arity)
 
@@ -492,16 +491,17 @@ defmodule Dagger.Workflow.Rule do
   end
 
   defp reaction_step_of_rhs(
-         {:fn, _, [{:->, _, [[pattern], body]}]} = _expr,
+         {:fn, _, [{:->, _, [[pattern], body]}]} = expr,
          _arity
        ) do
-    # {fun, _} = Code.eval_quoted(expr)
+    {fun, _} = Code.eval_quoted(expr)
 
-    fun_ast = quote do
-      fn unquote(pattern) -> unquote(body) end
-    end
+    # fun_ast =
+    #   quote do
+    #     fn unquote(pattern) -> unquote(body) end
+    #   end
 
-    fun = Macro.expand_once(fun_ast, __ENV__) |> IO.inspect(label: "fun123")
+    # fun = Macro.expand_once(fun_ast, __ENV__)
 
     Step.new(work: fun)
   end

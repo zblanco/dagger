@@ -37,9 +37,9 @@ defmodule Dagger.Workflow do
   @type t() :: %__MODULE__{
           name: String.t(),
           flow: Graph.t(),
-          hash: binary(),
+          hash: binary() | pos_integer(),
           generations: integer(),
-          context: map()
+          components: map()
         }
 
   @type runnable() :: {fun(), term()}
@@ -51,7 +51,7 @@ defmodule Dagger.Workflow do
             hash: nil,
             flow: nil,
             memory: nil,
-            context: nil
+            components: nil
 
   @typedoc """
   A discrimination network of conditions, and steps, built from composites such as rules and accumulations.
@@ -72,6 +72,7 @@ defmodule Dagger.Workflow do
     |> Map.put(:flow, flow)
     |> Map.put(:memory, new_memory())
     |> Map.put_new(:name, Uniq.UUID.uuid4())
+    |> Map.put(:components, %{})
   end
 
   def new(params) when is_map(params) do
@@ -185,9 +186,7 @@ defmodule Dagger.Workflow do
   def plan(%__MODULE__{} = wrk) do
     wrk
     |> maybe_prepare_next_generation_from_state_accumulations()
-    |> IO.inspect(label: "workflow after state accumulation generation prep")
     |> next_match_runnables()
-    |> IO.inspect(label: "next_match_runnables")
     |> Enum.reduce(wrk, fn {node, fact}, wrk ->
       Activation.activate(node, wrk, fact)
     end)
@@ -504,10 +503,8 @@ defmodule Dagger.Workflow do
       |> Enum.reduce(%{}, fn %{ancestry: {accumulator_hash, _}} = state_produced_fact, acc ->
         Map.put(acc, accumulator_hash, state_produced_fact)
       end)
-      |> IO.inspect(label: "state_produced_facts_by_ancestor")
 
-    stateful_matching_impls =
-      stateful_matching_impls() |> IO.inspect(label: "stateful_matching_impls")
+    stateful_matching_impls = stateful_matching_impls()
 
     state_produced_fact_ancestors = Map.keys(state_produced_facts_by_ancestor)
 
@@ -549,19 +546,17 @@ defmodule Dagger.Workflow do
     do: Dagger.Workflow.StatefulMatching.__protocol__(:impls) |> elem(1)
 
   defp next_match_runnables(%__MODULE__{flow: flow, memory: memory, generations: generation}) do
-    current_generation_facts =
-      facts_for_generation(memory, generation) |> IO.inspect(label: "current_generation_fact")
+    current_generation_facts = facts_for_generation(memory, generation)
 
     Enum.flat_map(current_generation_facts, fn current_generation_fact ->
       for %Graph.Edge{} = edge <- Graph.edges(memory),
           edge.label == :matchable do
-        IO.inspect(edge)
         {Map.get(flow.vertices, edge.v2), current_generation_fact}
       end
     end)
 
     # current_generation_facts =
-    #   facts_for_generation(memory, generation) |> IO.inspect(label: "current_generation_fact")
+    #   facts_for_generation(memory, generation)
 
     # Enum.flat_map(current_generation_facts, fn current_generation_fact ->
     #   for %Graph.Edge{} = edge <- Graph.out_edges(memory, current_generation_fact),
@@ -764,11 +759,6 @@ defmodule Dagger.Workflow do
     Enum.filter(Graph.vertices(flow), &match?(%Condition{}, &1))
   end
 
-  # def add_workflow(%__MODULE__{flow: flow} = parent_workflow, parent_connector_step_or_hash_or_step_name, %__MODULE__{flow: child_flow} = child_workflow) do
-  #   # how would we merge two workflow graphs? do we have to?
-  #   #
-  # end
-
   @doc """
   Fetches a step from the workflow provided the unique name.
 
@@ -791,21 +781,4 @@ defmodule Dagger.Workflow do
       step -> {:ok, step}
     end
   end
-
-  # @doc """
-  # Adds an accumulator to a Workflow.
-
-  # `Dagger.Accumulators` are used to collect some state for which to make further decision upon.
-
-  # You can think of an accumulator as a set of reducer functions that react over a shared state.
-
-  # See the `Dagger.Accumulator module` for more details.
-  # """
-  # def add_accumulator(%__MODULE__{} = workflow, accumulator) do
-  #   %Accumulator{init: init, reducers: reducers} = accumulator
-
-  #   Enum.reduce(reducers, add_rule(workflow, init), fn reducer, workflow ->
-  #     add_rule(workflow, reducer)
-  #   end)
-  # end
 end

@@ -48,6 +48,8 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Condition do
     Steps
   }
 
+  require Logger
+
   @spec activate(Dagger.Workflow.Condition.t(), Dagger.Workflow.t(), Dagger.Workflow.Fact.t()) ::
           Dagger.Workflow.t()
   def activate(
@@ -72,7 +74,7 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Condition do
 
   defp try_to_run_work(work, fact_value, arity) do
     try do
-      run_work(work, fact_value, arity) |> IO.inspect(label: "run work attempt")
+      run_work(work, fact_value, arity)
     rescue
       FunctionClauseError -> false
     catch
@@ -80,8 +82,8 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Condition do
         true
 
       any ->
-        IO.inspect(any,
-          label: "something other than FunctionClauseError happened in try_to_run_work/3"
+        Logger.error(
+          "something other than FunctionClauseError happened in try_to_run_work/3: \n\n #{inspect(any)}"
         )
 
         false
@@ -129,8 +131,6 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Step do
         %Workflow{} = workflow,
         %Fact{} = fact
       ) do
-    IO.inspect(step, label: "step")
-    IO.inspect(fact, label: "fact")
     result = Steps.run(step.work, fact.value, Steps.arity_of(step.work))
 
     result_fact = Fact.new(value: result, ancestry: {step.hash, fact.hash})
@@ -163,21 +163,15 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.Conjunction do
         %Workflow{} = workflow,
         %Fact{} = fact
       ) do
-    satisfied_conditions =
-      Workflow.satisfied_conditions(workflow, fact) |> IO.inspect(label: "satisfied_conditions")
-
-    IO.inspect(conj.condition_hashes, label: "required to activate #{conj.hash}")
+    satisfied_conditions = Workflow.satisfied_conditions(workflow, fact)
 
     if conj.hash not in satisfied_conditions and
          Enum.all?(conj.condition_hashes, &(&1 in satisfied_conditions)) do
-      IO.inspect(conj.hash, label: "conjunction is satisfied")
-
       workflow
       |> Workflow.prepare_next_runnables(conj, fact)
       |> Workflow.draw_connection(fact, conj.hash, :satisfied)
       |> Workflow.mark_runnable_as_ran(conj, fact)
     else
-      IO.inspect(conj.hash, label: "conjunction not satisfied")
       Workflow.mark_runnable_as_ran(workflow, conj, fact)
     end
   end
@@ -205,8 +199,7 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.MemoryAssertion do
         %Workflow{} = workflow,
         %Fact{} = fact
       ) do
-    if ma.memory_assertion.(workflow)
-       |> IO.inspect(label: "memory assertion: #{ma.hash} result") do
+    if ma.memory_assertion.(workflow) do
       workflow
       |> Workflow.prepare_next_runnables(ma, fact)
       |> Workflow.draw_connection(fact, ma.hash, :satisfied)
@@ -237,11 +230,7 @@ defimpl Dagger.Workflow.Activation, for: Dagger.Workflow.StateReaction do
       ) do
     last_known_state = Workflow.last_known_state(workflow, sr.state_hash)
 
-    IO.inspect(last_known_state, label: "last_known_state")
-    IO.inspect(sr, label: "state reaction")
-    IO.inspect(fact, label: "fact")
-
-    result = Steps.run(sr.work, last_known_state, sr.arity) |> IO.inspect(label: "result")
+    result = Steps.run(sr.work, last_known_state, sr.arity)
 
     unless result == {:error, :no_match_of_lhs_in_reactor_fn} do
       result_fact = Fact.new(value: result, ancestry: {sr.hash, fact.hash})
